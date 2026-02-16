@@ -23,3 +23,6 @@ jobs:
         run: |
           cd ~/documind
           docker compose up -d --build
+
+      - name: Cleanup old Docker images
+        run: docker image prune -af --filter "until=24h"
