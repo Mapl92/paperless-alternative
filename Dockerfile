@@ -1,7 +1,9 @@
 FROM node:20-alpine AS base
 
 # Install dependencies for sharp, bcrypt, and PDF rendering
-RUN apk add --no-cache libc6-compat python3 make g++ poppler-utils
+RUN apk add --no-cache libc6-compat python3 make g++ poppler-utils \
+    font-noto font-noto-cjk fontconfig \
+    && fc-cache -f
 
 WORKDIR /app
 
