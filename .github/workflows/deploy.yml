@@ -13,7 +13,7 @@ jobs:
       - name: Deploy to documind
         run: |
           rsync -a --delete \
-            --exclude .env.production \
+            --exclude '.env*' \
             --exclude data \
             --exclude node_modules \
             --exclude .git \
