@@ -78,13 +78,8 @@ export async function saveArchive(
 
 export async function deleteFile(relativePath: string): Promise<void> {
   const fullPath = join(DATA_DIR, relativePath);
-  const exists = existsSync(fullPath);
-  console.log("deleteFile:", { DATA_DIR, relativePath, fullPath, exists });
-  if (exists) {
+  if (existsSync(fullPath)) {
     await unlink(fullPath);
-    console.log("deleteFile: successfully deleted", fullPath);
-  } else {
-    console.log("deleteFile: file not found, skipping", fullPath);
   }
 }
 
@@ -92,7 +87,6 @@ export async function readFileFromStorage(
   relativePath: string
 ): Promise<Buffer> {
   const fullPath = join(DATA_DIR, relativePath);
-  console.log("readFileFromStorage:", { DATA_DIR, relativePath, fullPath, exists: existsSync(fullPath) });
   return readFile(fullPath);
 }
 
