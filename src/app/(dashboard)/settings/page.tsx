@@ -17,7 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Save, Loader2, Trash2, RefreshCw, Mail, ChevronDown, ChevronUp, Palette, Upload, X } from "lucide-react";
+import { Save, Loader2, Trash2, RefreshCw, Mail, ChevronDown, ChevronUp, Palette, Upload, X, Database } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import EntityManagement from "./entity-management";
 import SignatureManagement from "./signature-management";
@@ -69,6 +70,21 @@ export default function SettingsPage() {
   const [removeLogo, setRemoveLogo] = useState(false);
   const [savingBranding, setSavingBranding] = useState(false);
 
+  // Embeddings
+  const [embeddingStats, setEmbeddingStats] = useState({ total: 0, embedded: 0, pending: 0, running: false, progress: null as { processed: number; failed: number; total: number } | null });
+  const [embeddingPolling, setEmbeddingPolling] = useState(false);
+
+  const fetchEmbeddingStats = async () => {
+    try {
+      const res = await fetch("/api/embeddings/backfill");
+      const data = await res.json();
+      setEmbeddingStats(data);
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
   // Logs
   interface ApiLog {
     id: string;
@@ -106,6 +122,17 @@ export default function SettingsPage() {
       setLogsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!embeddingPolling) return;
+    const interval = setInterval(async () => {
+      const data = await fetchEmbeddingStats();
+      if (data && !data.running) {
+        setEmbeddingPolling(false);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [embeddingPolling]);
 
   useEffect(() => {
     fetch("/api/stats")
@@ -179,6 +206,7 @@ export default function SettingsPage() {
           <TabsTrigger value="management">Verwaltung</TabsTrigger>
           <TabsTrigger value="signatures">Unterschriften</TabsTrigger>
           <TabsTrigger value="ai">KI</TabsTrigger>
+          <TabsTrigger value="embeddings" onClick={() => { if (embeddingStats.total === 0) fetchEmbeddingStats(); }}>Embeddings</TabsTrigger>
           <TabsTrigger value="email">E-Mail</TabsTrigger>
           <TabsTrigger value="logs" onClick={() => { if (logs.length === 0) fetchLogs(1, logsType); }}>Logs</TabsTrigger>
           <TabsTrigger value="security">Sicherheit</TabsTrigger>
@@ -447,6 +475,101 @@ export default function SettingsPage() {
                 )}
                 KI-Einstellungen speichern
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Embeddings */}
+        <TabsContent value="embeddings" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Embeddings (Semantische Suche)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Embeddings ermöglichen die semantische Suche. Dokumente ohne Embedding werden nur per Textsuche gefunden.
+              </p>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-4 rounded-lg bg-muted">
+                  <p className="text-2xl font-bold">{embeddingStats.total}</p>
+                  <p className="text-xs text-muted-foreground">Dokumente gesamt</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-green-500/10">
+                  <p className="text-2xl font-bold text-green-600">{embeddingStats.embedded}</p>
+                  <p className="text-xs text-muted-foreground">Mit Embedding</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-orange-500/10">
+                  <p className="text-2xl font-bold text-orange-600">{embeddingStats.pending}</p>
+                  <p className="text-xs text-muted-foreground">Ohne Embedding</p>
+                </div>
+              </div>
+
+              {embeddingStats.total > 0 && (
+                <div>
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>Abdeckung</span>
+                    <span>{embeddingStats.total > 0 ? Math.round((embeddingStats.embedded / embeddingStats.total) * 100) : 0}%</span>
+                  </div>
+                  <Progress value={embeddingStats.total > 0 ? (embeddingStats.embedded / embeddingStats.total) * 100 : 0} />
+                </div>
+              )}
+
+              {embeddingStats.running && embeddingStats.progress && (
+                <div className="rounded-lg border p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm font-medium">Backfill läuft...</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>{embeddingStats.progress.processed + embeddingStats.progress.failed} / {embeddingStats.progress.total}</span>
+                    {embeddingStats.progress.failed > 0 && (
+                      <span className="text-red-500">{embeddingStats.progress.failed} fehlgeschlagen</span>
+                    )}
+                  </div>
+                  <Progress value={embeddingStats.progress.total > 0 ? ((embeddingStats.progress.processed + embeddingStats.progress.failed) / embeddingStats.progress.total) * 100 : 0} />
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/embeddings/backfill", { method: "POST" });
+                      if (res.ok) {
+                        toast.success("Embedding-Generierung gestartet");
+                        setEmbeddingPolling(true);
+                        await fetchEmbeddingStats();
+                      } else {
+                        const data = await res.json();
+                        toast.error(data.error || "Fehler beim Starten");
+                      }
+                    } catch {
+                      toast.error("Fehler beim Starten");
+                    }
+                  }}
+                  disabled={embeddingStats.running || embeddingStats.pending === 0}
+                >
+                  {embeddingStats.running ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  {embeddingStats.pending > 0
+                    ? `${embeddingStats.pending} fehlende Embeddings generieren`
+                    : "Alle Dokumente haben Embeddings"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={fetchEmbeddingStats}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
