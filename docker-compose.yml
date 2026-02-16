@@ -9,7 +9,7 @@ services:
       - DATA_DIR=/app/data
       - CONSUME_DIR=/app/data/consume
     volumes:
-      - documind-data:/app/data
+      - /srv/dev-disk-by-uuid-8693ad87-38fe-4ad5-bdf9-613c82482118/shared/Dokumente/documind:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -32,4 +32,3 @@ services:
 
 volumes:
   pgdata:
-  documind-data:
