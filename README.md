@@ -33,7 +33,7 @@ AUTH_SECRET="your-random-secret-here"
 OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 
 # OPTIONAL: Gemini API key (https://aistudio.google.com/apikey)
-# Enables semantic/hybrid search. Without it, only text search is available.
+# Used for semantic search (embeddings) and document chat
 GEMINI_API_KEY="your-gemini-api-key-here"
 
 # Login password (default: "admin" — change after first login in Settings)
@@ -46,7 +46,7 @@ AUTH_PASSWORD="admin"
 | `AUTH_PASSWORD` | Yes | Initial login password (changeable in UI) |
 | `OPENROUTER_API_KEY` | Yes | API key from [openrouter.ai](https://openrouter.ai/keys) |
 | `OPENROUTER_MODEL` | No | AI model (default: `openai/gpt-4.1-mini`) |
-| `GEMINI_API_KEY` | No | Google Gemini key for semantic search embeddings |
+| `GEMINI_API_KEY` | No | Google Gemini key for semantic search and chat |
 | `DATABASE_URL` | No | PostgreSQL connection string (default works with included DB) |
 | `DATA_DIR` | No | Document storage path inside container (default: `/app/data`) |
 
