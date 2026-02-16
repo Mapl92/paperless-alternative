@@ -24,7 +24,7 @@ export async function performOCR(
           },
           {
             type: "text",
-            text: "Extrahiere den gesamten Text aus diesem Dokumentbild.",
+            text: "Schreibe den EXAKTEN Text ab, der auf diesem Dokument sichtbar ist. Erfinde NICHTS. Nur Text wiedergeben, der tatsächlich zu sehen ist.",
           },
         ],
       },
