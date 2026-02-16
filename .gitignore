@@ -39,6 +39,9 @@ yarn-error.log*
 # keep example
 !.env.example
 
+# scripts (local only)
+/scripts/
+
 # data files
 /data/
 
