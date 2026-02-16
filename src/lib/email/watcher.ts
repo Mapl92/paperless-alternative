@@ -11,6 +11,65 @@ const g = globalThis as unknown as {
   __emailWatcherInterval?: ReturnType<typeof setInterval> | null;
 };
 
+const SETTINGS_KEY = "processed_email_ids";
+const CLEANUP_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+interface ProcessedIds {
+  ids: Record<string, number>; // messageId → timestamp
+}
+
+async function getProcessedEmailIds(): Promise<Set<string>> {
+  const setting = await prisma.settings.findUnique({
+    where: { key: SETTINGS_KEY },
+  });
+  if (!setting) return new Set();
+  const data = setting.value as unknown as ProcessedIds;
+  return new Set(Object.keys(data.ids || {}));
+}
+
+async function addProcessedEmailId(messageId: string): Promise<void> {
+  const setting = await prisma.settings.findUnique({
+    where: { key: SETTINGS_KEY },
+  });
+  const data: ProcessedIds = setting
+    ? (setting.value as unknown as ProcessedIds)
+    : { ids: {} };
+
+  data.ids[messageId] = Date.now();
+
+  await prisma.settings.upsert({
+    where: { key: SETTINGS_KEY },
+    create: { key: SETTINGS_KEY, value: JSON.parse(JSON.stringify(data)) },
+    update: { value: JSON.parse(JSON.stringify(data)) },
+  });
+}
+
+async function cleanupOldProcessedIds(): Promise<void> {
+  const setting = await prisma.settings.findUnique({
+    where: { key: SETTINGS_KEY },
+  });
+  if (!setting) return;
+
+  const data = setting.value as unknown as ProcessedIds;
+  const cutoff = Date.now() - CLEANUP_MAX_AGE_MS;
+  let removed = 0;
+
+  for (const [id, ts] of Object.entries(data.ids)) {
+    if (ts < cutoff) {
+      delete data.ids[id];
+      removed++;
+    }
+  }
+
+  if (removed > 0) {
+    await prisma.settings.update({
+      where: { key: SETTINGS_KEY },
+      data: { value: JSON.parse(JSON.stringify(data)) },
+    });
+    console.log(`[email] Cleaned up ${removed} old processed email ID(s)`);
+  }
+}
+
 async function pollEmails() {
   if (g.__emailWatcherRunning) return;
   g.__emailWatcherRunning = true;
@@ -24,6 +83,11 @@ async function pollEmails() {
     }
 
     console.log("[email] Polling for new emails...");
+
+    // Cleanup old processed IDs periodically
+    await cleanupOldProcessedIds();
+
+    const processedIds = await getProcessedEmailIds();
 
     client = new ImapFlow({
       host: settings.imapHost,
@@ -54,9 +118,25 @@ async function pollEmails() {
 
       for (const uid of messages) {
         try {
+          // Fetch only envelope first (lightweight)
+          const envelopeResult = await client.fetchOne(String(uid), {
+            envelope: true,
+          }, { uid: true });
+
+          if (!envelopeResult || !envelopeResult.envelope?.messageId) continue;
+
+          const messageId = envelopeResult.envelope.messageId;
+
+          // Skip already processed emails
+          if (processedIds.has(messageId)) {
+            console.log(`[email] Already processed, skipping: ${messageId}`);
+            continue;
+          }
+
+          // Fetch full source for processing
           const message = await client.fetchOne(String(uid), {
             source: true,
-          });
+          }, { uid: true });
 
           if (!message || !("source" in message) || !message.source) continue;
 
@@ -71,8 +151,8 @@ async function pollEmails() {
           );
 
           if (pdfAttachments.length === 0) {
-            // Mark as seen even if no PDFs (avoid re-checking)
-            await client.messageFlagsAdd(String(uid), ["\\Seen"]);
+            // Track as processed even if no PDFs (avoid re-checking)
+            await addProcessedEmailId(messageId);
             continue;
           }
 
@@ -135,8 +215,8 @@ async function pollEmails() {
             }
           }
 
-          // Mark email as seen
-          await client.messageFlagsAdd(String(uid), ["\\Seen"]);
+          // Track email as processed (no \Seen flag)
+          await addProcessedEmailId(messageId);
         } catch (error) {
           console.error(`[email] Error processing message ${uid}:`, error);
         }
