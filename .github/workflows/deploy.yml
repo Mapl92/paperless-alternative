@@ -1,0 +1,25 @@
+name: Deploy to Pi
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to documind
+        run: |
+          rsync -a --delete \
+            --exclude .env.production \
+            --exclude data \
+            --exclude node_modules \
+            --exclude .git \
+            $GITHUB_WORKSPACE/ ~/documind/
+
+      - name: Rebuild containers
+        run: |
+          cd ~/documind
+          docker compose up -d --build

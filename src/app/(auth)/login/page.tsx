@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, Loader2 } from "lucide-react";
+import { useBranding } from "@/lib/hooks/use-branding";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const branding = useBranding();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,10 +44,18 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-            <FileText className="h-6 w-6 text-primary-foreground" />
-          </div>
-          <CardTitle className="text-2xl">DocuMind</CardTitle>
+          {branding.hasLogo ? (
+            <img
+              src="/api/branding/logo"
+              alt={branding.appName}
+              className="mx-auto mb-2 h-12 w-12 rounded-xl object-contain"
+            />
+          ) : (
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
+              <FileText className="h-6 w-6 text-primary-foreground" />
+            </div>
+          )}
+          <CardTitle className="text-2xl">{branding.appName}</CardTitle>
           <p className="text-sm text-muted-foreground">
             Dokumentenverwaltung
           </p>

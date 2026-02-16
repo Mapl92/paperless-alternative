@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Save, Loader2, Trash2, RefreshCw, Mail, ChevronDown, ChevronUp } from "lucide-react";
+import { Save, Loader2, Trash2, RefreshCw, Mail, ChevronDown, ChevronUp, Palette, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import EntityManagement from "./entity-management";
 import SignatureManagement from "./signature-management";
@@ -60,6 +60,14 @@ export default function SettingsPage() {
   const [savingEmail, setSavingEmail] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const [emailHelpOpen, setEmailHelpOpen] = useState(false);
+
+  // Branding
+  const [appName, setAppName] = useState("DocuMind");
+  const [hasLogo, setHasLogo] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
+  const [savingBranding, setSavingBranding] = useState(false);
 
   // Logs
   interface ApiLog {
@@ -125,6 +133,13 @@ export default function SettingsPage() {
         setEmailInterval(data.pollIntervalMinutes ?? 5);
       })
       .catch(() => {});
+    fetch("/api/settings/branding")
+      .then((r) => r.json())
+      .then((data) => {
+        setAppName(data.appName ?? "DocuMind");
+        setHasLogo(data.hasLogo ?? false);
+      })
+      .catch(() => {});
   }, []);
 
   async function handleChangePassword(e: React.FormEvent) {
@@ -159,6 +174,7 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="general">
         <TabsList>
+          <TabsTrigger value="branding">Personalisierung</TabsTrigger>
           <TabsTrigger value="general">Allgemein</TabsTrigger>
           <TabsTrigger value="management">Verwaltung</TabsTrigger>
           <TabsTrigger value="signatures">Unterschriften</TabsTrigger>
@@ -167,6 +183,139 @@ export default function SettingsPage() {
           <TabsTrigger value="logs" onClick={() => { if (logs.length === 0) fetchLogs(1, logsType); }}>Logs</TabsTrigger>
           <TabsTrigger value="security">Sicherheit</TabsTrigger>
         </TabsList>
+
+        {/* Branding */}
+        <TabsContent value="branding" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="h-5 w-5" />
+                Personalisierung
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <Label htmlFor="appName">App-Name</Label>
+                <Input
+                  id="appName"
+                  value={appName}
+                  onChange={(e) => setAppName(e.target.value)}
+                  placeholder="DocuMind"
+                  className="mt-1 max-w-sm"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Wird in der Sidebar, auf der Login-Seite und im Browser-Tab angezeigt.
+                </p>
+              </div>
+
+              <Separator />
+
+              <div>
+                <Label>Logo</Label>
+                <div className="mt-2 flex items-start gap-4">
+                  {/* Preview */}
+                  <div className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30 shrink-0 overflow-hidden">
+                    {removeLogo ? (
+                      <span className="text-xs text-muted-foreground">Kein Logo</span>
+                    ) : logoPreview ? (
+                      <img src={logoPreview} alt="Logo Vorschau" className="h-full w-full object-contain p-1" />
+                    ) : hasLogo ? (
+                      <img src={`/api/branding/logo?v=${Date.now()}`} alt="Aktuelles Logo" className="h-full w-full object-contain p-1" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Kein Logo</span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => document.getElementById("logoUpload")?.click()}
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        Logo hochladen
+                      </Button>
+                      {(hasLogo || logoPreview) && !removeLogo && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setRemoveLogo(true);
+                            setLogoFile(null);
+                            setLogoPreview(null);
+                          }}
+                        >
+                          <X className="mr-2 h-4 w-4" />
+                          Entfernen
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      id="logoUpload"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setLogoFile(file);
+                          setRemoveLogo(false);
+                          const url = URL.createObjectURL(file);
+                          setLogoPreview(url);
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPG, WebP oder SVG. Empfohlen: quadratisch, min. 64x64px.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                onClick={async () => {
+                  setSavingBranding(true);
+                  try {
+                    const formData = new FormData();
+                    formData.append("appName", appName);
+                    if (logoFile) formData.append("logo", logoFile);
+                    if (removeLogo) formData.append("removeLogo", "true");
+
+                    const res = await fetch("/api/settings/branding", {
+                      method: "PUT",
+                      body: formData,
+                    });
+
+                    if (res.ok) {
+                      const data = await res.json();
+                      setHasLogo(data.hasLogo);
+                      setLogoFile(null);
+                      setLogoPreview(null);
+                      setRemoveLogo(false);
+                      toast.success("Personalisierung gespeichert");
+                      window.dispatchEvent(new Event("branding-changed"));
+                    } else {
+                      toast.error("Speichern fehlgeschlagen");
+                    }
+                  } catch {
+                    toast.error("Speichern fehlgeschlagen");
+                  } finally {
+                    setSavingBranding(false);
+                  }
+                }}
+                disabled={savingBranding}
+              >
+                {savingBranding ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Personalisierung speichern
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* General */}
         <TabsContent value="general" className="space-y-4 mt-4">

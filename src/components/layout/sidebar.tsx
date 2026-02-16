@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { useBranding } from "@/lib/hooks/use-branding";
 
 interface SavedView {
   id: string;
@@ -46,6 +47,7 @@ function SidebarContent() {
   const searchParams = useSearchParams();
   const activeViewId = searchParams.get("view");
 
+  const branding = useBranding();
   const [views, setViews] = useState<SavedView[]>([]);
 
   useEffect(() => {
@@ -87,10 +89,18 @@ function SidebarContent() {
     <aside className="flex h-full w-64 flex-col border-r bg-card">
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-          <FileText className="h-4 w-4 text-primary-foreground" />
-        </div>
-        <span className="text-lg font-semibold">DocuMind</span>
+        {branding.hasLogo ? (
+          <img
+            src={`/api/branding/logo?v=${Date.now()}`}
+            alt={branding.appName}
+            className="h-8 w-8 rounded-lg object-contain"
+          />
+        ) : (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+            <FileText className="h-4 w-4 text-primary-foreground" />
+          </div>
+        )}
+        <span className="text-lg font-semibold">{branding.appName}</span>
       </div>
 
       {/* Navigation */}
