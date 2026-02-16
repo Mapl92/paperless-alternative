@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "standalone",
+  images: {
+    remotePatterns: [],
+  },
+  serverExternalPackages: ["sharp", "bcrypt"],
 };
 
 export default nextConfig;

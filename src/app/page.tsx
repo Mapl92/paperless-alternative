@@ -1,65 +1,295 @@
-import Image from "next/image";
+"use client";
+
+import { Suspense, useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { DocumentGrid } from "@/components/documents/document-grid";
+import { FilterSidebar } from "@/components/documents/filter-sidebar";
+import { DateFilterBar } from "@/components/documents/date-filter-bar";
+import { Sidebar } from "@/components/layout/sidebar";
+import { MobileNav } from "@/components/layout/mobile-nav";
+import { Bookmark, Search } from "lucide-react";
+import { useDebounce } from "@/lib/hooks/use-debounce";
+import { toast } from "sonner";
+import type { DateField, DatePreset } from "@/components/documents/filter-sidebar";
+
+function resolveDatePreset(preset: DatePreset): { from: Date; to: Date } {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfDay = new Date(today.getTime() + 86400000 - 1);
+  switch (preset) {
+    case "today":
+      return { from: today, to: endOfDay };
+    case "yesterday": {
+      const y = new Date(today.getTime() - 86400000);
+      return { from: y, to: new Date(y.getTime() + 86400000 - 1) };
+    }
+    case "last7days":
+      return { from: new Date(today.getTime() - 6 * 86400000), to: endOfDay };
+    case "last30days":
+      return { from: new Date(today.getTime() - 29 * 86400000), to: endOfDay };
+    case "thisYear":
+      return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay };
+  }
+}
+
+const SORT_OPTIONS = [
+  { value: "createdAt:desc", label: "Neueste zuerst" },
+  { value: "createdAt:asc", label: "Älteste zuerst" },
+  { value: "title:asc", label: "Titel A–Z" },
+  { value: "title:desc", label: "Titel Z–A" },
+  { value: "documentDate:desc", label: "Datum (neueste)" },
+  { value: "documentDate:asc", label: "Datum (älteste)" },
+] as const;
+
+interface SavedViewData {
+  id: string;
+  name: string;
+  filters: {
+    search?: string;
+    tagId?: string;
+    correspondentId?: string;
+    documentTypeId?: string;
+    dateField?: DateField;
+    datePreset?: DatePreset;
+    dateFrom?: string;
+    dateTo?: string;
+  };
+  sortField: string;
+  sortOrder: string;
+}
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const viewId = searchParams.get("view");
+
+  const [searchInput, setSearchInput] = useState("");
+  const search = useDebounce(searchInput, 300);
+  const [tagId, setTagId] = useState<string | undefined>();
+  const [correspondentId, setCorrespondentId] = useState<string | undefined>();
+  const [documentTypeId, setDocumentTypeId] = useState<string | undefined>();
+  const [sort, setSort] = useState("createdAt:desc");
+  const [dateField, setDateField] = useState<DateField>("documentDate");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>();
+  const [dateTo, setDateTo] = useState<Date | undefined>();
+  const [datePreset, setDatePreset] = useState<DatePreset | undefined>();
+
+  const [sortField, sortOrder] = sort.split(":");
+
+  // Compute effective date range
+  const effectiveDates = datePreset ? resolveDatePreset(datePreset) : { from: dateFrom, to: dateTo };
+  const documentDateFrom = dateField === "documentDate" && effectiveDates.from ? effectiveDates.from.toISOString() : undefined;
+  const documentDateTo = dateField === "documentDate" && effectiveDates.to ? effectiveDates.to.toISOString() : undefined;
+  const addedDateFrom = dateField === "addedAt" && effectiveDates.from ? effectiveDates.from.toISOString() : undefined;
+  const addedDateTo = dateField === "addedAt" && effectiveDates.to ? effectiveDates.to.toISOString() : undefined;
+
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const saveInputRef = useRef<HTMLInputElement>(null);
+
+  // Load saved view when ?view= changes
+  useEffect(() => {
+    if (!viewId) return;
+    fetch("/api/saved-views")
+      .then((r) => r.json())
+      .then((views: SavedViewData[]) => {
+        const view = views.find((v) => v.id === viewId);
+        if (!view) return;
+        applyView(view);
+      })
+      .catch(() => {});
+  }, [viewId]);
+
+  function applyView(view: SavedViewData) {
+    const f = view.filters;
+    setSearchInput(f.search ?? "");
+    setTagId(f.tagId ?? undefined);
+    setCorrespondentId(f.correspondentId ?? undefined);
+    setDocumentTypeId(f.documentTypeId ?? undefined);
+    setSort(`${view.sortField}:${view.sortOrder}`);
+    setDateField(f.dateField ?? "documentDate");
+    if (f.datePreset) {
+      setDatePreset(f.datePreset);
+      setDateFrom(undefined);
+      setDateTo(undefined);
+    } else {
+      setDatePreset(undefined);
+      setDateFrom(f.dateFrom ? new Date(f.dateFrom) : undefined);
+      setDateTo(f.dateTo ? new Date(f.dateTo) : undefined);
+    }
+  }
+
+  async function handleSaveView() {
+    if (!saveName.trim()) return;
+
+    const filters: Record<string, string> = {};
+    if (searchInput) filters.search = searchInput;
+    if (tagId) filters.tagId = tagId;
+    if (correspondentId) filters.correspondentId = correspondentId;
+    if (documentTypeId) filters.documentTypeId = documentTypeId;
+    if (dateFrom || dateTo || datePreset) filters.dateField = dateField;
+    if (datePreset) {
+      filters.datePreset = datePreset;
+    } else {
+      if (dateFrom) filters.dateFrom = dateFrom.toISOString();
+      if (dateTo) filters.dateTo = dateTo.toISOString();
+    }
+
+    const res = await fetch("/api/saved-views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: saveName.trim(),
+        filters,
+        sortField,
+        sortOrder,
+      }),
+    });
+
+    if (res.ok) {
+      toast.success("Ansicht gespeichert");
+      setSaveName("");
+      setSaveOpen(false);
+      window.dispatchEvent(new Event("saved-views-changed"));
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error ?? "Fehler beim Speichern");
+    }
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      {/* Desktop Sidebar */}
+      <div className="hidden md:flex">
+        <Sidebar />
+      </div>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+        <div className="p-4 md:p-6">
+          {/* Header */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold mb-4">Dokumente</h1>
+            <div className="flex gap-3 items-center">
+              <div className="relative max-w-md flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Dokumente durchsuchen..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={sort} onValueChange={setSort}>
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SORT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Popover open={saveOpen} onOpenChange={setSaveOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="icon" title="Ansicht speichern">
+                    <Bookmark className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72" align="end">
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Ansicht speichern</p>
+                    <Input
+                      ref={saveInputRef}
+                      placeholder="Name der Ansicht..."
+                      value={saveName}
+                      onChange={(e) => setSaveName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveView();
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={handleSaveView}
+                      disabled={!saveName.trim()}
+                    >
+                      Speichern
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Date Filter Bar */}
+            <DateFilterBar
+              dateField={dateField}
+              onDateFieldChange={setDateField}
+              dateFrom={datePreset ? resolveDatePreset(datePreset).from : dateFrom}
+              dateTo={datePreset ? resolveDatePreset(datePreset).to : dateTo}
+              datePreset={datePreset}
+              onDateFromChange={setDateFrom}
+              onDateToChange={setDateTo}
+              onDatePresetChange={setDatePreset}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          {/* Content with sidebar */}
+          <div className="flex gap-6">
+            <FilterSidebar
+              selectedTagId={tagId}
+              selectedCorrespondentId={correspondentId}
+              selectedDocumentTypeId={documentTypeId}
+              onTagSelect={setTagId}
+              onCorrespondentSelect={setCorrespondentId}
+              onDocumentTypeSelect={setDocumentTypeId}
+              onApplyView={applyView}
+            />
+
+            <div className="flex-1 min-w-0">
+              <DocumentGrid
+                search={search}
+                tagId={tagId}
+                correspondentId={correspondentId}
+                documentTypeId={documentTypeId}
+                sortField={sortField}
+                sortOrder={sortOrder}
+                documentDateFrom={documentDateFrom}
+                documentDateTo={documentDateTo}
+                addedDateFrom={addedDateFrom}
+                addedDateTo={addedDateTo}
+              />
+            </div>
+          </div>
         </div>
       </main>
+
+      {/* Mobile Bottom Nav */}
+      <MobileNav />
     </div>
   );
 }

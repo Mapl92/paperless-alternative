@@ -1,0 +1,35 @@
+services:
+  documind:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      - DATA_DIR=/app/data
+      - CONSUME_DIR=/app/data/consume
+    volumes:
+      - documind-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=documind
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-documind_secret}
+      - POSTGRES_DB=documind
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U documind"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  documind-data:

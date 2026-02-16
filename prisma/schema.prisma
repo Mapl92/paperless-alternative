@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Document {
+  id              String    @id @default(uuid())
+  title           String
+  content         String?   @db.Text
+  originalFile    String
+  archiveFile     String?
+  thumbnailFile   String?
+  documentDate    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  addedAt         DateTime  @default(now())
+  correspondentId String?
+  documentTypeId  String?
+  aiProcessed     Boolean   @default(false)
+  aiSummary       String?   @db.Text
+  aiExtractedData Json?
+  checksum        String?
+  fileSize        Int
+  pageCount       Int?
+  mimeType        String    @default("application/pdf")
+
+  correspondent Correspondent? @relation(fields: [correspondentId], references: [id], onDelete: SetNull)
+  documentType  DocumentType?  @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  tags          Tag[]
+  notes         Note[]
+
+  @@index([correspondentId])
+  @@index([documentTypeId])
+  @@index([documentDate])
+  @@index([createdAt])
+  @@index([title])
+}
+
+model Tag {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  color     String     @default("#6B7280")
+  createdAt DateTime   @default(now())
+  documents Document[]
+}
+
+model Correspondent {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  documents Document[]
+}
+
+model DocumentType {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  documents Document[]
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  content    String   @db.Text
+  documentId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+model SavedView {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  filters   Json
+  sortField String   @default("createdAt")
+  sortOrder String   @default("desc")
+  createdAt DateTime @default(now())
+}
+
+model Settings {
+  id    String @id @default(uuid())
+  key   String @unique
+  value Json
+}
+
+model Signature {
+  id        String   @id @default(uuid())
+  name      String
+  imageFile String
+  width     Int
+  height    Int
+  createdAt DateTime @default(now())
+
+  tokens SigningToken[]
+}
+
+model SigningToken {
+  id          String    @id @default(uuid())
+  token       String    @unique @default(uuid())
+  name        String
+  usedAt      DateTime?
+  signatureId String?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  signature Signature? @relation(fields: [signatureId], references: [id], onDelete: SetNull)
+}
+
+model ChatConversation {
+  id                  String   @id @default(uuid())
+  title               String   @default("Neuer Chat")
+  documentScope       String   @default("all")
+  selectedDocumentIds Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  messages ChatMessage[]
+}
+
+model ChatMessage {
+  id                    String   @id @default(uuid())
+  conversationId        String
+  role                  String
+  content               String   @db.Text
+  referencedDocumentIds Json?
+  createdAt             DateTime @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model ApiLog {
+  id           String   @id @default(uuid())
+  timestamp    DateTime @default(now())
+  type         String   // openrouter | gemini-chat | gemini-embedding | gemini-title | vector-search
+  action       String   // ocr | classify | chat | title | embedding | query-embedding | semantic-search
+  model        String?
+  durationMs   Int
+  inputTokens  Int?
+  outputTokens Int?
+  status       String   // success | error
+  error        String?  @db.Text
+  metadata     Json?
+
+  @@index([timestamp(sort: Desc)])
+  @@index([type])
+}
