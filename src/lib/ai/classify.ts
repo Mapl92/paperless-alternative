@@ -36,9 +36,9 @@ export async function classifyDocument(
 
   const systemPrompt = `${aiSettings.classifyPrompt}
 
-Bestehende Tags: ${JSON.stringify(existingTags.slice(0, 100))}
-Bestehende Korrespondenten: ${JSON.stringify(existingCorrespondents.slice(0, 50))}
-Bestehende Dokumenttypen: ${JSON.stringify(existingDocumentTypes.slice(0, 50))}`;
+Bestehende Tags: ${JSON.stringify(existingTags)}
+Bestehende Korrespondenten: ${JSON.stringify(existingCorrespondents)}
+Bestehende Dokumenttypen: ${JSON.stringify(existingDocumentTypes)}`;
 
   const response = await callOpenRouter(
     [
