@@ -875,28 +875,26 @@ export default function DocumentDetailPage({
                     placeholder="Beschreibung (optional)"
                     rows={1}
                   />
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="date"
-                      value={parsedTodo.dueDate || ""}
-                      onChange={(e) => setParsedTodo({ ...parsedTodo, dueDate: e.target.value || null })}
-                      className="text-sm h-8 w-40"
-                    />
-                    <div className="flex gap-1">
-                      {PRIORITIES.map((p) => (
-                        <button
-                          key={p.value}
-                          onClick={() => setParsedTodo({ ...parsedTodo, priority: p.value })}
-                          className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
-                            parsedTodo.priority === p.value
-                              ? `${p.bg} ${p.color} ${p.border}`
-                              : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"
-                          }`}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
+                  <Input
+                    type="date"
+                    value={parsedTodo.dueDate || ""}
+                    onChange={(e) => setParsedTodo({ ...parsedTodo, dueDate: e.target.value || null })}
+                    className="text-sm h-8"
+                  />
+                  <div className="flex gap-1">
+                    {PRIORITIES.map((p) => (
+                      <button
+                        key={p.value}
+                        onClick={() => setParsedTodo({ ...parsedTodo, priority: p.value })}
+                        className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                          parsedTodo.priority === p.value
+                            ? `${p.bg} ${p.color} ${p.border}`
+                            : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
                   <div className="flex gap-2 pt-1">
                     <Button size="sm" onClick={handleSaveTodo} disabled={savingTodo || !parsedTodo.title.trim()}>
@@ -912,14 +910,7 @@ export default function DocumentDetailPage({
 
               {/* Note textarea */}
               <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  {todoMode && (
-                    <div className="absolute top-1 right-1 z-10">
-                      <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50">
-                        Todo-Modus
-                      </Badge>
-                    </div>
-                  )}
+                <div className="flex-1">
                   <Textarea
                     placeholder="Notiz hinzufügen... (tippe @todo für Aufgabe)"
                     value={newNote}
@@ -936,6 +927,13 @@ export default function DocumentDetailPage({
                       }
                     }}
                   />
+                  {todoMode && (
+                    <div className="mt-1">
+                      <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50">
+                        Todo-Modus
+                      </Badge>
+                    </div>
+                  )}
                 </div>
                 {!todoMode && (
                   <Button
