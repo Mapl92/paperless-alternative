@@ -40,16 +40,20 @@ export async function performOCROnMultiplePages(
   pages: Array<{ base64: string; mimeType: string }>
 ): Promise<string> {
   const aiSettings = await getAISettings();
-  const results: string[] = [];
+  const CONCURRENCY = 3;
+  const results: string[] = new Array(pages.length);
 
-  for (const page of pages) {
-    const text = await performOCR(
-      page.base64,
-      page.mimeType,
-      aiSettings.ocrPrompt,
-      aiSettings.model
+  // Process pages in parallel batches
+  for (let i = 0; i < pages.length; i += CONCURRENCY) {
+    const batch = pages.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map((page) =>
+        performOCR(page.base64, page.mimeType, aiSettings.ocrPrompt, aiSettings.model)
+      )
     );
-    results.push(text);
+    for (let j = 0; j < batchResults.length; j++) {
+      results[i + j] = batchResults[j];
+    }
   }
 
   return results.join("\n\n---\n\n");

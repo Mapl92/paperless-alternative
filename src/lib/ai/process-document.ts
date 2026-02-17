@@ -118,13 +118,18 @@ export async function processDocument(documentId: string, pdfBuffer: Buffer) {
 
     const thumbnailPath = await saveThumbnail(thumbnailBuffer, documentId);
 
-    // Prepare pages for OCR
-    const pages = pageImages.map((buf) => ({
-      base64: buf.toString("base64"),
-      mimeType: "image/png",
-    }));
+    // Resize pages for OCR (200 DPI PNGs are too large for API transfer)
+    const pages = await Promise.all(
+      pageImages.map(async (buf) => {
+        const resized = await sharp(buf)
+          .resize(1200, 1600, { fit: "inside", withoutEnlargement: true })
+          .png({ quality: 85, compressionLevel: 6 })
+          .toBuffer();
+        return { base64: resized.toString("base64"), mimeType: "image/png" };
+      })
+    );
 
-    // Perform OCR
+    // Perform OCR (parallel with concurrency limit)
     const ocrText = await performOCROnMultiplePages(pages);
 
     // Classify document
