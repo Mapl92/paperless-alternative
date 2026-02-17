@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { DocumentCard } from "./document-card";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,17 +89,20 @@ export function DocumentGrid({
     setPage(1);
   }, [search, tagId, correspondentId, documentTypeId, sortField, sortOrder, documentDateFrom, documentDateTo, addedDateFrom, addedDateTo]);
 
-  // ESC to exit select mode
+  // #20: Keep selectMode in a ref so the keyboard handler never needs to be re-registered
+  const selectModeRef = useRef(selectMode);
+  useEffect(() => { selectModeRef.current = selectMode; }, [selectMode]);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && selectMode) {
+      if (e.key === "Escape" && selectModeRef.current) {
         setSelectMode(false);
         setSelectedIds(new Set());
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectMode]);
+  }, []); // Empty deps — handler registered once, reads selectMode via ref
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {

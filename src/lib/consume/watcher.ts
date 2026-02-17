@@ -9,11 +9,13 @@ import { prisma } from "@/lib/db/prisma";
 const SCAN_INTERVAL_MS = 30_000;
 const SUPPORTED_EXTENSIONS = [".pdf"];
 
-let running = false;
+// #18: Use globalThis so the flag is shared across Next.js route bundles
+// (avoids two scan cycles running simultaneously if modules are instantiated twice)
+const g = globalThis as unknown as { __consumeRunning?: boolean };
 
 async function scanConsumeDir() {
-  if (running) return;
-  running = true;
+  if (g.__consumeRunning) return;
+  g.__consumeRunning = true;
 
   try {
     const consumeDir = getConsumeDir();
@@ -93,7 +95,7 @@ async function scanConsumeDir() {
   } catch (error) {
     console.error("[consume] Scan error:", error);
   } finally {
-    running = false;
+    g.__consumeRunning = false;
   }
 }
 

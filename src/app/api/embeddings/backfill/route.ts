@@ -3,17 +3,21 @@ import { prisma } from "@/lib/db/prisma";
 import { pool } from "@/lib/db/prisma";
 import { generateEmbedding, storeEmbedding } from "@/lib/ai/embeddings";
 
-let backfillRunning = false;
-let backfillProgress = { processed: 0, failed: 0, total: 0 };
+// #24: Use globalThis so backfill state survives across Next.js route bundle re-instantiations
+const g = globalThis as unknown as {
+  __backfillRunning?: boolean;
+  __backfillProgress?: { processed: number; failed: number; total: number };
+};
+
+function getProgress() {
+  return g.__backfillProgress ?? { processed: 0, failed: 0, total: 0 };
+}
 
 export async function GET() {
-  // Count documents with and without embeddings
   const [total, embedded] = await Promise.all([
     prisma.document.count({ where: { aiProcessed: true } }),
     pool
-      .query(
-        `SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL`
-      )
+      .query(`SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL`)
       .then((r) => parseInt(r.rows[0].count)),
   ]);
 
@@ -21,15 +25,15 @@ export async function GET() {
     total,
     embedded,
     pending: total - embedded,
-    running: backfillRunning,
-    progress: backfillRunning ? backfillProgress : null,
+    running: g.__backfillRunning ?? false,
+    progress: g.__backfillRunning ? getProgress() : null,
   });
 }
 
 export async function POST() {
-  if (backfillRunning) {
+  if (g.__backfillRunning) {
     return NextResponse.json(
-      { error: "Backfill läuft bereits", progress: backfillProgress },
+      { error: "Backfill läuft bereits", progress: getProgress() },
       { status: 409 }
     );
   }
@@ -41,19 +45,17 @@ export async function POST() {
     );
   }
 
-  // Start backfill in background
-  backfillRunning = true;
-  backfillProgress = { processed: 0, failed: 0, total: 0 };
+  g.__backfillRunning = true;
+  g.__backfillProgress = { processed: 0, failed: 0, total: 0 };
 
   runBackfill().finally(() => {
-    backfillRunning = false;
+    g.__backfillRunning = false;
   });
 
   return NextResponse.json({ message: "Backfill gestartet" });
 }
 
 async function runBackfill() {
-  // Get all documents without embeddings that have content
   const result = await pool.query(
     `SELECT d."id", d."title", d."content", d."aiSummary"
      FROM "Document" d
@@ -61,7 +63,7 @@ async function runBackfill() {
      ORDER BY d."createdAt" DESC`
   );
 
-  backfillProgress.total = result.rows.length;
+  g.__backfillProgress!.total = result.rows.length;
   console.log(`Backfill: ${result.rows.length} documents to process`);
 
   for (const row of result.rows) {
@@ -71,20 +73,20 @@ async function runBackfill() {
 
       if (embedding) {
         await storeEmbedding(row.id, embedding);
-        backfillProgress.processed++;
+        g.__backfillProgress!.processed++;
       } else {
-        backfillProgress.failed++;
+        g.__backfillProgress!.failed++;
       }
 
       // Rate limit: ~10 requests/second to stay within Gemini free tier
       await new Promise((resolve) => setTimeout(resolve, 100));
     } catch (error) {
       console.error(`Backfill failed for document ${row.id}:`, error);
-      backfillProgress.failed++;
+      g.__backfillProgress!.failed++;
     }
   }
 
   console.log(
-    `Backfill complete: ${backfillProgress.processed} processed, ${backfillProgress.failed} failed`
+    `Backfill complete: ${g.__backfillProgress!.processed} processed, ${g.__backfillProgress!.failed} failed`
   );
 }

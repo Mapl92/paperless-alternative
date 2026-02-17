@@ -69,6 +69,8 @@ export default function SettingsPage() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
   const [savingBranding, setSavingBranding] = useState(false);
+  // #25: Version counter busts logo cache only after a successful upload (not on every render)
+  const [logoVersion, setLogoVersion] = useState(0);
 
   // Embeddings
   const [embeddingStats, setEmbeddingStats] = useState({ total: 0, embedded: 0, pending: 0, running: false, progress: null as { processed: number; failed: number; total: number } | null });
@@ -248,7 +250,7 @@ export default function SettingsPage() {
                     ) : logoPreview ? (
                       <img src={logoPreview} alt="Logo Vorschau" className="h-full w-full object-contain p-1" />
                     ) : hasLogo ? (
-                      <img src={`/api/branding/logo?v=${Date.now()}`} alt="Aktuelles Logo" className="h-full w-full object-contain p-1" />
+                      <img src={`/api/branding/logo?v=${logoVersion}`} alt="Aktuelles Logo" className="h-full w-full object-contain p-1" />
                     ) : (
                       <span className="text-xs text-muted-foreground">Kein Logo</span>
                     )}
@@ -321,6 +323,7 @@ export default function SettingsPage() {
                       setLogoFile(null);
                       setLogoPreview(null);
                       setRemoveLogo(false);
+                      setLogoVersion((v) => v + 1); // #25: bust cache after successful upload
                       toast.success("Personalisierung gespeichert");
                       window.dispatchEvent(new Event("branding-changed"));
                     } else {

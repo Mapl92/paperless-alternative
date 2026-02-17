@@ -34,6 +34,8 @@ export function ReferencedDocuments({ documents, onToggle, excludedIds }: Refere
                   e.stopPropagation();
                   onToggle(doc.id);
                 }}
+                aria-label={isExcluded ? `"${doc.title}" einschließen` : `"${doc.title}" ausschließen`}
+                aria-pressed={!isExcluded}
                 className="absolute top-0.5 right-0.5 z-10 w-4 h-4 rounded-sm border flex items-center justify-center transition-colors bg-background/80 hover:bg-background"
               >
                 {!isExcluded && <Check className="h-3 w-3 text-primary" />}

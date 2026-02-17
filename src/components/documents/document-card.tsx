@@ -52,6 +52,7 @@ export function DocumentCard({ document, selectable, selected, onSelect }: Docum
               checked={selected}
               onCheckedChange={() => onSelect?.(document.id)}
               className="bg-background/80 backdrop-blur"
+              aria-label={`Dokument "${document.title}" auswählen`}
             />
           </div>
         )}

@@ -40,7 +40,8 @@ export async function performOCROnMultiplePages(
   pages: Array<{ base64: string; mimeType: string }>
 ): Promise<string> {
   const aiSettings = await getAISettings();
-  const CONCURRENCY = 3;
+  // #23: Allow tuning via env var without needing a DB schema change
+  const CONCURRENCY = parseInt(process.env.OCR_CONCURRENCY || "3", 10) || 3;
   const results: string[] = new Array(pages.length);
 
   // Process pages in parallel batches

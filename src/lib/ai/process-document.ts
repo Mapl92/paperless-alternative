@@ -21,9 +21,10 @@ async function pdfPagesToPng(
 ): Promise<Buffer[]> {
   const tempDir = await mkdtemp(join(tmpdir(), "documind-"));
   const pdfPath = join(tempDir, "input.pdf");
-  await writeFile(pdfPath, pdfBuffer);
 
   try {
+    // #26: writeFile inside try so the finally cleanup runs even if writing fails
+    await writeFile(pdfPath, pdfBuffer);
     // pdftoppm converts PDF pages to PPM/PNG images
     // -png: output as PNG
     // -r 200: 200 DPI resolution
@@ -55,7 +56,10 @@ async function pdfPagesToPng(
     return pages;
   } finally {
     // Cleanup entire temp directory (PDF + any remaining PNG files)
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    // #27: Log cleanup failures — silent errors here hide disk-full conditions
+    await rm(tempDir, { recursive: true, force: true }).catch((err) => {
+      console.error(`[process-document] Failed to clean up temp dir ${tempDir}:`, err);
+    });
   }
 }
 
