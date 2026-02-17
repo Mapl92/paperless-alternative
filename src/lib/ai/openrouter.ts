@@ -26,21 +26,30 @@ export async function callOpenRouter(
 
   const start = Date.now();
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://documind.local",
-      "X-Title": "DocuMind",
-    },
-    body: JSON.stringify({
-      model: usedModel,
-      messages,
-      temperature: 0.1,
-      max_tokens: 4096,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://documind.local",
+        "X-Title": "DocuMind",
+      },
+      body: JSON.stringify({
+        model: usedModel,
+        messages,
+        temperature: 0.1,
+        max_tokens: 4096,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const durationMs = Date.now() - start;
 

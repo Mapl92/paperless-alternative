@@ -25,15 +25,23 @@ export async function generateEmbedding(
   const start = Date.now();
 
   try {
-    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: { parts: [{ text: truncated }] },
-        taskType: "RETRIEVAL_DOCUMENT",
-        outputDimensionality: EMBEDDING_DIMENSIONS,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: { parts: [{ text: truncated }] },
+          taskType: "RETRIEVAL_DOCUMENT",
+          outputDimensionality: EMBEDDING_DIMENSIONS,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const durationMs = Date.now() - start;
 
@@ -87,15 +95,23 @@ export async function generateQueryEmbedding(
   const start = Date.now();
 
   try {
-    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: { parts: [{ text }] },
-        taskType: "RETRIEVAL_QUERY",
-        outputDimensionality: EMBEDDING_DIMENSIONS,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: { parts: [{ text }] },
+          taskType: "RETRIEVAL_QUERY",
+          outputDimensionality: EMBEDDING_DIMENSIONS,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const durationMs = Date.now() - start;
 

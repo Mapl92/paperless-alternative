@@ -6,7 +6,7 @@ import { getAISettings } from "./settings";
 import { saveThumbnail } from "@/lib/files/storage";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { writeFile, readFile, readdir, unlink, mkdtemp } from "fs/promises";
+import { writeFile, readFile, readdir, unlink, mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -54,8 +54,8 @@ async function pdfPagesToPng(
 
     return pages;
   } finally {
-    // Cleanup temp PDF
-    await unlink(pdfPath).catch(() => {});
+    // Cleanup entire temp directory (PDF + any remaining PNG files)
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 

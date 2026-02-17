@@ -35,18 +35,27 @@ export async function* streamChatResponse(
 
   const start = Date.now();
 
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}&alt=sse`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: messages,
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 8192,
-      },
-    }),
-  });
+  // Timeout only covers connection establishment — not the full stream duration
+  const controller = new AbortController();
+  const connectTimeout = setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch(`${GEMINI_API_URL}?key=${apiKey}&alt=sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: messages,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+        },
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(connectTimeout);
+  }
 
   if (!res.ok) {
     const err = await res.text();
@@ -211,12 +220,16 @@ export async function generateTitle(userMessage: string): Promise<string> {
   const start = Date.now();
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
           contents: [
             {
               role: "user",
@@ -233,8 +246,12 @@ export async function generateTitle(userMessage: string): Promise<string> {
             thinkingConfig: { thinkingBudget: 0 },
           },
         }),
-      }
-    );
+          signal: controller.signal,
+        }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       logApiCall({
