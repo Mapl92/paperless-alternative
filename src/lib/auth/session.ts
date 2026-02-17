@@ -1,14 +1,15 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
-if (!process.env.AUTH_SECRET) {
-  throw new Error(
-    "AUTH_SECRET environment variable is not set. " +
-    "Set a strong random secret (e.g. openssl rand -hex 32) in your .env or .env.production file."
-  );
+function getSecret(): Uint8Array {
+  if (!process.env.AUTH_SECRET) {
+    throw new Error(
+      "AUTH_SECRET environment variable is not set. " +
+        "Set a strong random secret (e.g. openssl rand -hex 32) in your .env or .env.production file."
+    );
+  }
+  return new TextEncoder().encode(process.env.AUTH_SECRET);
 }
-
-const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET);
 
 const COOKIE_NAME = "documind-session";
 
@@ -17,13 +18,13 @@ export async function createSession(): Promise<string> {
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime("30d")
     .setIssuedAt()
-    .sign(SECRET);
+    .sign(getSecret());
   return token;
 }
 
 export async function verifySession(token: string): Promise<boolean> {
   try {
-    await jwtVerify(token, SECRET);
+    await jwtVerify(token, getSecret());
     return true;
   } catch {
     return false;
