@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   Calendar,
   Check,
+  CheckSquare,
   ChevronsUpDown,
   Download,
   FileText,
@@ -32,6 +33,7 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  Square,
   Tag,
   Trash2,
   User,
@@ -39,6 +41,25 @@ import {
 } from "lucide-react";
 import SigningOverlay from "@/components/signatures/signing-overlay";
 import { toast } from "sonner";
+import { getPriority, PRIORITIES } from "@/lib/constants/todo";
+
+interface TodoItem {
+  id: string;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  priority: number;
+  completed: boolean;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+interface ParsedTodoResult {
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  priority: number;
+}
 
 interface DocumentDetail {
   id: string;
@@ -108,6 +129,14 @@ export default function DocumentDetailPage({
 
   // Fulltext toggle
   const [showFulltext, setShowFulltext] = useState(false);
+
+  // Todo state
+  const [todoMode, setTodoMode] = useState(false);
+  const [parsedTodo, setParsedTodo] = useState<ParsedTodoResult | null>(null);
+  const [parsingTodo, setParsingTodo] = useState(false);
+  const [savingTodo, setSavingTodo] = useState(false);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const parseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -258,6 +287,127 @@ export default function DocumentDetailPage({
     } catch {
       toast.error("Verarbeitung fehlgeschlagen");
       setReprocessing(false);
+    }
+  }
+
+  // Load todos for this document
+  useEffect(() => {
+    fetch(`/api/documents/${id}/todos`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setTodos(data); })
+      .catch(() => {});
+  }, [id]);
+
+  // Handle @todo detection and AI parsing
+  function handleNoteChange(text: string) {
+    setNewNote(text);
+
+    if (text.startsWith("@todo ")) {
+      if (!todoMode) setTodoMode(true);
+      const todoText = text.slice(6).trim();
+
+      if (parseTimerRef.current) clearTimeout(parseTimerRef.current);
+
+      if (todoText.length > 2) {
+        setParsingTodo(true);
+        parseTimerRef.current = setTimeout(async () => {
+          try {
+            const res = await fetch("/api/todos/parse", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: todoText }),
+            });
+            if (res.ok) {
+              const parsed = await res.json();
+              setParsedTodo(parsed);
+            }
+          } catch {
+            // fallback handled by keeping previous parsedTodo
+          } finally {
+            setParsingTodo(false);
+          }
+        }, 500);
+      } else {
+        setParsedTodo(null);
+        setParsingTodo(false);
+      }
+    } else {
+      if (todoMode) {
+        setTodoMode(false);
+        setParsedTodo(null);
+        setParsingTodo(false);
+      }
+    }
+  }
+
+  function cancelTodoMode() {
+    setTodoMode(false);
+    setParsedTodo(null);
+    setParsingTodo(false);
+    setNewNote("");
+    if (parseTimerRef.current) clearTimeout(parseTimerRef.current);
+  }
+
+  async function handleSaveTodo() {
+    if (!parsedTodo) return;
+    setSavingTodo(true);
+    try {
+      const res = await fetch(`/api/documents/${id}/todos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsedTodo),
+      });
+      if (res.ok) {
+        const newTodo = await res.json();
+        setTodos((prev) => [newTodo, ...prev]);
+        cancelTodoMode();
+        toast.success("Todo erstellt");
+      }
+    } catch {
+      toast.error("Todo konnte nicht erstellt werden");
+    } finally {
+      setSavingTodo(false);
+    }
+  }
+
+  async function handleToggleTodo(todoId: string, completed: boolean) {
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === todoId
+          ? { ...t, completed, completedAt: completed ? new Date().toISOString() : null }
+          : t
+      )
+    );
+    try {
+      await fetch(`/api/todos/${todoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+    } catch {
+      // revert on error
+      setTodos((prev) =>
+        prev.map((t) =>
+          t.id === todoId
+            ? { ...t, completed: !completed, completedAt: null }
+            : t
+        )
+      );
+    }
+  }
+
+  async function handleDeleteTodo(todoId: string) {
+    const prev = todos;
+    setTodos((t) => t.filter((todo) => todo.id !== todoId));
+    try {
+      const res = await fetch(`/api/todos/${todoId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Todo gelöscht");
+      } else {
+        setTodos(prev);
+      }
+    } catch {
+      setTodos(prev);
     }
   }
 
@@ -704,25 +854,110 @@ export default function DocumentDetailPage({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Todo preview */}
+              {todoMode && parsedTodo && (
+                <div className="rounded-md border border-blue-300 bg-blue-50/50 dark:bg-blue-950/20 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-blue-600">
+                    <CheckSquare className="h-3.5 w-3.5" />
+                    Todo-Vorschau
+                    {parsingTodo && <Loader2 className="h-3 w-3 animate-spin" />}
+                  </div>
+                  <Input
+                    value={parsedTodo.title}
+                    onChange={(e) => setParsedTodo({ ...parsedTodo, title: e.target.value })}
+                    className="text-sm h-8"
+                    placeholder="Titel"
+                  />
+                  <Textarea
+                    value={parsedTodo.description || ""}
+                    onChange={(e) => setParsedTodo({ ...parsedTodo, description: e.target.value || null })}
+                    className="text-sm min-h-[40px]"
+                    placeholder="Beschreibung (optional)"
+                    rows={1}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={parsedTodo.dueDate || ""}
+                      onChange={(e) => setParsedTodo({ ...parsedTodo, dueDate: e.target.value || null })}
+                      className="text-sm h-8 w-40"
+                    />
+                    <div className="flex gap-1">
+                      {PRIORITIES.map((p) => (
+                        <button
+                          key={p.value}
+                          onClick={() => setParsedTodo({ ...parsedTodo, priority: p.value })}
+                          className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                            parsedTodo.priority === p.value
+                              ? `${p.bg} ${p.color} ${p.border}`
+                              : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" onClick={handleSaveTodo} disabled={savingTodo || !parsedTodo.title.trim()}>
+                      {savingTodo ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Check className="mr-1 h-3 w-3" />}
+                      Todo erstellen
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={cancelTodoMode}>
+                      Abbrechen
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Note textarea */}
               <div className="flex gap-2">
-                <Textarea
-                  placeholder="Notiz hinzufügen..."
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  className="min-h-[60px] text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddNote();
-                  }}
-                />
-                <Button
-                  size="icon"
-                  className="shrink-0 self-end"
-                  onClick={handleAddNote}
-                  disabled={!newNote.trim() || savingNote}
-                >
-                  <MessageSquarePlus className="h-4 w-4" />
-                </Button>
+                <div className="flex-1 relative">
+                  {todoMode && (
+                    <div className="absolute top-1 right-1 z-10">
+                      <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50">
+                        Todo-Modus
+                      </Badge>
+                    </div>
+                  )}
+                  <Textarea
+                    placeholder="Notiz hinzufügen... (tippe @todo für Aufgabe)"
+                    value={newNote}
+                    onChange={(e) => handleNoteChange(e.target.value)}
+                    className={`min-h-[60px] text-sm ${todoMode ? "border-blue-400 bg-blue-500/5" : ""}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape" && todoMode) {
+                        cancelTodoMode();
+                        return;
+                      }
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        if (todoMode && parsedTodo) handleSaveTodo();
+                        else handleAddNote();
+                      }
+                    }}
+                  />
+                </div>
+                {!todoMode && (
+                  <Button
+                    size="icon"
+                    className="shrink-0 self-end"
+                    onClick={handleAddNote}
+                    disabled={!newNote.trim() || savingNote}
+                  >
+                    <MessageSquarePlus className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
+
+              {/* Parsing indicator */}
+              {todoMode && parsingTodo && !parsedTodo && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Analysiere...
+                </div>
+              )}
+
+              {/* Existing notes */}
               {doc.notes.length > 0 && (
                 <div className="space-y-2">
                   {doc.notes.map((note) => (
@@ -746,6 +981,59 @@ export default function DocumentDetailPage({
               )}
             </CardContent>
           </Card>
+
+          {/* Document Todos */}
+          {todos.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Aufgaben
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {todos.map((todo) => {
+                  const prio = getPriority(todo.priority);
+                  const overdue = todo.dueDate && !todo.completed && new Date(todo.dueDate) < new Date();
+                  return (
+                    <div
+                      key={todo.id}
+                      className="group flex items-start gap-2 rounded-md p-2 hover:bg-muted/50 transition-colors"
+                    >
+                      <button
+                        onClick={() => handleToggleTodo(todo.id, !todo.completed)}
+                        className="mt-0.5 shrink-0"
+                      >
+                        {todo.completed ? (
+                          <CheckSquare className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Square className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm ${todo.completed ? "line-through text-muted-foreground" : ""}`}>
+                          {todo.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-[10px] font-medium ${prio.color}`}>{prio.label}</span>
+                          {todo.dueDate && (
+                            <span className={`text-[10px] ${overdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                              {new Date(todo.dueDate).toLocaleDateString("de-DE")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteTodo(todo.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-muted shrink-0"
+                      >
+                        <X className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 

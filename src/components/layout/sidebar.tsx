@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
+  CheckSquare,
   FileText,
   Upload,
   Search,
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/search", label: "Suche", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/todos", label: "Aufgaben", icon: CheckSquare },
 ];
 
 

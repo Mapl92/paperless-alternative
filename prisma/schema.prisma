@@ -32,6 +32,7 @@ model Document {
   documentType  DocumentType?  @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
   tags          Tag[]
   notes         Note[]
+  todos         Todo[]
 
   @@index([correspondentId])
   @@index([documentTypeId])
@@ -152,4 +153,23 @@ model ApiLog {
 
   @@index([timestamp(sort: Desc)])
   @@index([type])
+}
+
+model Todo {
+  id          String    @id @default(uuid())
+  title       String
+  description String?   @db.Text
+  dueDate     DateTime?
+  priority    Int       @default(4)
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  documentId  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([completed])
+  @@index([dueDate])
 }

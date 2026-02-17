@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Home, Upload, Search, Settings, MessageCircle } from "lucide-react";
+import { CheckSquare, Home, Upload, Search, Settings, MessageCircle } from "lucide-react";
 
 const items = [
   { href: "/", label: "Dokumente", icon: Home },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/search", label: "Suche", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/todos", label: "Aufgaben", icon: CheckSquare },
   { href: "/settings", label: "Mehr", icon: Settings },
 ];
 
