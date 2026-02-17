@@ -15,6 +15,7 @@ import {
   Bookmark,
   X,
   MessageCircle,
+  ScanSearch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/search", label: "Suche", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/todos", label: "Aufgaben", icon: CheckSquare },
+  { href: "/duplicates", label: "Duplikate", icon: ScanSearch },
 ];
 
 
