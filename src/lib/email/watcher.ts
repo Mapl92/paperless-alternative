@@ -98,6 +98,10 @@ async function pollEmails() {
         pass: settings.imapPassword,
       },
       logger: false,
+      // #8: Prevent indefinite hangs on unresponsive IMAP servers
+      connectionTimeout: 30_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 30_000,
     });
 
     await client.connect();
@@ -306,6 +310,9 @@ export async function testImapConnection(config: {
         pass: config.imapPassword,
       },
       logger: false,
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     });
 
     await client.connect();
@@ -320,8 +327,11 @@ export async function testImapConnection(config: {
     await client.logout();
     return result;
   } catch (error) {
-    const msg =
-      error instanceof Error ? error.message : "Unbekannter Fehler";
+    let msg = error instanceof Error ? error.message : "Unbekannter Fehler";
+    // #19: Remove password from IMAP error messages before returning to client
+    if (config.imapPassword) {
+      msg = msg.replaceAll(config.imapPassword, "***");
+    }
     return {
       success: false,
       message: `Verbindung fehlgeschlagen: ${msg}`,

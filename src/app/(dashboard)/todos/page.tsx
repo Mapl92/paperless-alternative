@@ -77,6 +77,9 @@ export default function TodosPage() {
   }
 
   async function handleToggle(todoId: string, completed: boolean) {
+    // #21: Capture full original state before optimistic update for correct rollback
+    const original = todos.find((t) => t.id === todoId);
+
     setTodos((prev) =>
       prev.map((t) =>
         t.id === todoId
@@ -97,10 +100,9 @@ export default function TodosPage() {
         }, 300);
       }
     } catch {
+      // Restore the full original todo state (including completedAt)
       setTodos((prev) =>
-        prev.map((t) =>
-          t.id === todoId ? { ...t, completed: !completed, completedAt: null } : t
-        )
+        prev.map((t) => (t.id === todoId && original ? { ...t, ...original } : t))
       );
     }
   }
