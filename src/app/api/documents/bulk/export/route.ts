@@ -43,34 +43,45 @@ export async function POST(request: NextRequest) {
       entries.push({ name: fileName, filePath });
     }
 
-    // Create ZIP archive
-    const archive = archiver("zip", { zlib: { level: 1 } }); // fast compression for PDFs
+    // #17: Stream the ZIP directly — never load the full archive into RAM
+    const archive = archiver("zip", { zlib: { level: 1 } });
     const passthrough = new PassThrough();
     archive.pipe(passthrough);
 
-    for (const entry of entries) {
-      try {
-        const buffer = await readFileFromStorage(entry.filePath);
-        archive.append(buffer, { name: entry.name });
-      } catch (err) {
-        console.error(`Failed to read file ${entry.filePath}:`, err);
+    // Feed files into archive (run in background relative to stream setup)
+    (async () => {
+      for (const entry of entries) {
+        try {
+          const buffer = await readFileFromStorage(entry.filePath);
+          archive.append(buffer, { name: entry.name });
+        } catch (err) {
+          console.error(`Failed to read file ${entry.filePath}:`, err);
+        }
       }
-    }
+      await archive.finalize();
+    })().catch((err) => {
+      console.error("Archive finalization error:", err);
+      archive.abort();
+    });
 
-    await archive.finalize();
+    // Convert Node.js PassThrough stream to Web ReadableStream
+    const readable = new ReadableStream({
+      start(controller) {
+        passthrough.on("data", (chunk: Buffer) => {
+          controller.enqueue(new Uint8Array(chunk));
+        });
+        passthrough.on("end", () => controller.close());
+        passthrough.on("error", (err) => controller.error(err));
+      },
+      cancel() {
+        archive.abort();
+      },
+    });
 
-    // Collect into buffer for NextResponse
-    const chunks: Buffer[] = [];
-    for await (const chunk of passthrough) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    const zipBuffer = Buffer.concat(chunks);
-
-    return new NextResponse(new Uint8Array(zipBuffer), {
+    return new NextResponse(readable, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="documind-export.zip"`,
-        "Content-Length": String(zipBuffer.length),
       },
     });
   } catch (error) {

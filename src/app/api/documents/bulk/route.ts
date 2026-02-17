@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { deleteFile } from "@/lib/files/storage";
 
+// #16: Limit bulk operations to prevent DoS via oversized payloads
+const MAX_BULK_ITEMS = 500;
+
 interface BulkRequest {
   action: "delete" | "addTags" | "removeTags" | "setCorrespondent" | "setDocumentType";
   documentIds: string[];
@@ -22,6 +25,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // #16: Reject oversized batches
+    if (documentIds.length > MAX_BULK_ITEMS) {
+      return NextResponse.json(
+        { error: `Maximal ${MAX_BULK_ITEMS} Dokumente pro Bulk-Operation erlaubt` },
+        { status: 400 }
+      );
+    }
+
     switch (action) {
       case "delete": {
         const documents = await prisma.document.findMany({
@@ -29,15 +40,17 @@ export async function POST(request: NextRequest) {
           select: { id: true, originalFile: true, archiveFile: true, thumbnailFile: true },
         });
 
-        for (const doc of documents) {
-          if (doc.originalFile) await deleteFile(doc.originalFile);
-          if (doc.archiveFile) await deleteFile(doc.archiveFile);
-          if (doc.thumbnailFile) await deleteFile(doc.thumbnailFile);
-        }
-
+        // #11: Delete DB records first — if file deletion fails, data is still consistent
         await prisma.document.deleteMany({
           where: { id: { in: documentIds } },
         });
+
+        // Then delete files (best-effort, orphaned files are preferable to orphaned DB records)
+        for (const doc of documents) {
+          if (doc.originalFile) await deleteFile(doc.originalFile).catch((err) => console.error(`Failed to delete ${doc.originalFile}:`, err));
+          if (doc.archiveFile) await deleteFile(doc.archiveFile).catch((err) => console.error(`Failed to delete ${doc.archiveFile}:`, err));
+          if (doc.thumbnailFile) await deleteFile(doc.thumbnailFile).catch((err) => console.error(`Failed to delete ${doc.thumbnailFile}:`, err));
+        }
 
         return NextResponse.json({ success: true, count: documents.length });
       }

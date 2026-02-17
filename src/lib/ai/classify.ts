@@ -69,16 +69,11 @@ Bestehende Dokumenttypen: ${JSON.stringify(existingDocumentTypes)}`;
       language: result.language || "de",
     };
   } catch {
-    console.error("Failed to parse AI classification response:", response.content);
-    return {
-      title: "Unbenanntes Dokument",
-      correspondent: null,
-      documentType: null,
-      tags: [],
-      documentDate: null,
-      summary: null,
-      extractedData: null,
-      language: "de",
-    };
+    // #15: Throw so process-document marks the doc with an error instead of silently
+    // storing a blank classification as if processing succeeded
+    throw new Error(
+      `KI-Klassifizierung fehlgeschlagen: Ungültige JSON-Antwort vom Modell. ` +
+      `Antwort: ${response.content.slice(0, 300)}`
+    );
   }
 }

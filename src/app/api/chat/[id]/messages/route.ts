@@ -138,6 +138,19 @@ export async function POST(
         }
       } catch (error) {
         console.error("Streaming error:", error);
+
+        // #10: Save whatever partial response arrived before the error
+        if (fullResponse) {
+          await prisma.chatMessage.create({
+            data: {
+              conversationId: id,
+              role: "assistant",
+              content: fullResponse,
+              referencedDocumentIds: JSON.parse(JSON.stringify(referencedDocumentIds)),
+            },
+          }).catch((e) => console.error("Failed to save partial message:", e));
+        }
+
         const errMsg =
           error instanceof Error ? error.message : "Streaming fehlgeschlagen";
         controller.enqueue(
