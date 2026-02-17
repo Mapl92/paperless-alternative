@@ -6,7 +6,7 @@ import { getAISettings } from "./settings";
 import { saveThumbnail } from "@/lib/files/storage";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { writeFile, readFile, unlink, mkdtemp } from "fs/promises";
+import { writeFile, readFile, readdir, unlink, mkdtemp } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -38,18 +38,18 @@ async function pdfPagesToPng(
       join(tempDir, "page"),
     ]);
 
-    // pdftoppm creates files like page-1.png, page-2.png, etc.
+    // pdftoppm creates files like page-1.png or page-01.png (zero-padded
+    // depending on total page count). Read all matching PNGs sorted by name.
+    const files = await readdir(tempDir);
+    const pageFiles = files
+      .filter((f) => f.startsWith("page-") && f.endsWith(".png"))
+      .sort();
+
     const pages: Buffer[] = [];
-    for (let i = 1; i <= maxPages; i++) {
-      const pagePath = join(tempDir, `page-${i}.png`);
-      try {
-        const buf = await readFile(pagePath);
-        pages.push(buf);
-        await unlink(pagePath);
-      } catch {
-        // Page doesn't exist (PDF has fewer pages)
-        break;
-      }
+    for (const file of pageFiles) {
+      const buf = await readFile(join(tempDir, file));
+      pages.push(buf);
+      await unlink(join(tempDir, file));
     }
 
     return pages;
