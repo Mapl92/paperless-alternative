@@ -10,11 +10,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow static files and Next.js internals
+  // Allow Next.js internals (static assets are already excluded by the matcher config)
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon") ||
-    pathname.includes(".")
+    pathname.startsWith("/favicon")
   ) {
     return NextResponse.next();
   }

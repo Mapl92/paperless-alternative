@@ -70,6 +70,26 @@ export async function PUT(request: NextRequest) {
           if (existsSync(p)) await unlink(p);
         }
       } else if (logo && logo.size > 0) {
+        // #4: SVG excluded — can contain <script> tags → stored XSS
+        // #4: 2 MB max for a logo file
+        const ALLOWED_MIME: Record<string, string> = {
+          "image/png": "png",
+          "image/jpeg": "jpg",
+          "image/webp": "webp",
+        };
+        if (!ALLOWED_MIME[logo.type]) {
+          return NextResponse.json(
+            { error: "Nur PNG, JPG und WebP sind erlaubt (kein SVG)" },
+            { status: 400 }
+          );
+        }
+        if (logo.size > 2 * 1024 * 1024) {
+          return NextResponse.json(
+            { error: "Logo darf maximal 2 MB groß sein" },
+            { status: 400 }
+          );
+        }
+
         if (!existsSync(BRANDING_DIR)) {
           await mkdir(BRANDING_DIR, { recursive: true });
         }
@@ -78,14 +98,7 @@ export async function PUT(request: NextRequest) {
           const p = join(BRANDING_DIR, `logo.${ext}`);
           if (existsSync(p)) await unlink(p);
         }
-        // Determine extension from mime type
-        const mimeToExt: Record<string, string> = {
-          "image/png": "png",
-          "image/jpeg": "jpg",
-          "image/webp": "webp",
-          "image/svg+xml": "svg",
-        };
-        const ext = mimeToExt[logo.type] || "png";
+        const ext = ALLOWED_MIME[logo.type];
         const buffer = Buffer.from(await logo.arrayBuffer());
         await writeFile(join(BRANDING_DIR, `logo.${ext}`), buffer);
       }
