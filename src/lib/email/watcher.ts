@@ -143,14 +143,22 @@ async function pollEmails() {
           const parsed = await simpleParser(message.source);
           const subject = parsed.subject || "E-Mail Import";
 
+          const allAttachments = parsed.attachments || [];
+          if (allAttachments.length > 0) {
+            console.log(
+              `[email] "${subject}" has ${allAttachments.length} attachment(s): ${allAttachments.map((a) => `${a.filename || "unnamed"} (${a.contentType})`).join(", ")}`
+            );
+          }
+
           // Extract PDF attachments
-          const pdfAttachments = (parsed.attachments || []).filter(
+          const pdfAttachments = allAttachments.filter(
             (att) =>
               att.contentType === "application/pdf" ||
               att.filename?.toLowerCase().endsWith(".pdf")
           );
 
           if (pdfAttachments.length === 0) {
+            console.log(`[email] No PDF attachments in "${subject}", skipping`);
             // Track as processed even if no PDFs (avoid re-checking)
             await addProcessedEmailId(messageId);
             continue;
