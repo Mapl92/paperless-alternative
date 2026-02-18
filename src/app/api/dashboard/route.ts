@@ -4,26 +4,31 @@ import { pool } from "@/lib/db/prisma";
 import { readdir, stat, statfs } from "fs/promises";
 import { join } from "path";
 
-/** Recursively sum file sizes in a directory. */
+/** Recursively sum file sizes in a directory.
+ *  Each entry is wrapped in its own try-catch so a single failing stat()
+ *  (e.g. EMFILE when hundreds of files are opened concurrently) doesn't
+ *  abort the whole directory. Sizes are collected as return values and
+ *  reduced at the end — avoids the shared-`total` mutation pitfall.
+ */
 async function getDirectorySize(dirPath: string): Promise<number> {
-  let total = 0;
   try {
     const entries = await readdir(dirPath, { withFileTypes: true });
-    await Promise.all(
-      entries.map(async (entry) => {
+    const sizes = await Promise.all(
+      entries.map(async (entry): Promise<number> => {
         const full = join(dirPath, entry.name);
-        if (entry.isDirectory()) {
-          total += await getDirectorySize(full);
-        } else if (entry.isFile()) {
-          const s = await stat(full);
-          total += s.size;
+        try {
+          if (entry.isDirectory()) return await getDirectorySize(full);
+          if (entry.isFile()) return (await stat(full)).size;
+        } catch {
+          // single-entry error — skip, don't abort the whole directory
         }
+        return 0;
       })
     );
+    return sizes.reduce((sum, s) => sum + s, 0);
   } catch {
-    // Directory missing or no access — skip silently
+    return 0;
   }
-  return total;
 }
 
 export async function GET() {
