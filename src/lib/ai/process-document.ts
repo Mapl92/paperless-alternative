@@ -174,6 +174,9 @@ export async function processDocument(documentId: string, pdfBuffer: Buffer) {
         documentDate: classification.documentDate
           ? new Date(classification.documentDate)
           : null,
+        expiresAt: classification.expiresAt
+          ? new Date(classification.expiresAt)
+          : null,
         aiProcessed: true,
         aiSummary: classification.summary,
         aiExtractedData: classification.extractedData

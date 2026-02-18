@@ -19,6 +19,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in folgendem Format:
   "documentType": "Dokumenttyp",
   "tags": ["Tag1", "Tag2"],
   "documentDate": "YYYY-MM-DD",
+  "expiresAt": "YYYY-MM-DD oder null",
   "summary": "2-3 Sätze Zusammenfassung",
   "extractedData": { "betrag": "...", "iban": "...", ... },
   "language": "de"
@@ -31,7 +32,8 @@ Regeln:
 - Korrespondent: kürzeste sinnvolle Form (z.B. "Amazon" statt "Amazon EU SARL")
 - Bei Rechnungen: Tag "Zahlung prüfen" hinzufügen
 - Titel: kurz, keine Adressen, Sprache des Dokuments
-- documentDate: das relevanteste Datum im Dokument
+- documentDate: das relevanteste Datum im Dokument (Ausstellungsdatum, Rechnungsdatum)
+- expiresAt: Ablaufdatum des Dokuments — NUR setzen wenn eindeutig erkennbar: Vertragsende, Versicherungsperiode-Ende, Garantiefrist, Kündigungsfrist, Ausweis-Gültigkeit, Abonnement-Ende. NICHT das Ausstellungsdatum. Bei Unsicherheit: null.
 - extractedData: Beträge, IBAN, Vertragsnummern etc. falls vorhanden`;
 
 const DEFAULT_OCR_PROMPT =

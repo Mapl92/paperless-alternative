@@ -12,6 +12,7 @@ interface DocumentCardProps {
     title: string;
     thumbnailFile: string | null;
     documentDate: string | null;
+    expiresAt: string | null;
     createdAt: string;
     aiProcessed: boolean;
     correspondent: { id: string; name: string } | null;
@@ -23,6 +24,20 @@ interface DocumentCardProps {
   onSelect?: (id: string) => void;
 }
 
+function getExpiryBadge(expiresAt: string | null): { label: string; className: string } | null {
+  if (!expiresAt) return null;
+  const diffDays = Math.ceil(
+    (new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
+  if (diffDays < 0)
+    return { label: "Abgelaufen", className: "bg-red-600 text-white border-red-600" };
+  if (diffDays <= 7)
+    return { label: `${diffDays}T`, className: "bg-red-500 text-white border-red-500" };
+  if (diffDays <= 30)
+    return { label: `${diffDays}T`, className: "bg-orange-400 text-white border-orange-400" };
+  return null; // far future — no badge on card
+}
+
 export function DocumentCard({ document, selectable, selected, onSelect }: DocumentCardProps) {
   const date = document.documentDate || document.createdAt;
   const formattedDate = new Date(date).toLocaleDateString("de-DE", {
@@ -30,6 +45,8 @@ export function DocumentCard({ document, selectable, selected, onSelect }: Docum
     month: "2-digit",
     year: "numeric",
   });
+
+  const expiryBadge = getExpiryBadge(document.expiresAt);
 
   const cardContent = (
     <Card className={`group overflow-hidden transition-all hover:shadow-md hover:border-primary/30 ${selected ? "ring-2 ring-primary border-primary" : ""}`}>
@@ -56,7 +73,15 @@ export function DocumentCard({ document, selectable, selected, onSelect }: Docum
             />
           </div>
         )}
-        {!document.aiProcessed && (
+        {/* Expiry badge — top-right, only for ≤30 days or expired */}
+        {expiryBadge && (
+          <div className="absolute top-2 right-2 z-10">
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${expiryBadge.className}`}>
+              {expiryBadge.label}
+            </span>
+          </div>
+        )}
+        {!document.aiProcessed && !expiryBadge && (
           <div className="absolute top-2 right-2">
             <Badge variant="secondary" className="text-xs">
               Verarbeitung...

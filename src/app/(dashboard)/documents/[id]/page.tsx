@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   Calendar,
   Check,
+  Clock,
   CheckSquare,
   ChevronsUpDown,
   Download,
@@ -69,6 +70,7 @@ interface DocumentDetail {
   archiveFile: string | null;
   thumbnailFile: string | null;
   documentDate: string | null;
+  expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
   fileSize: number;
@@ -116,6 +118,7 @@ export default function DocumentDetailPage({
   const [typeOpen, setTypeOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [editingDate, setEditingDate] = useState(false);
+  const [editingExpiry, setEditingExpiry] = useState(false);
 
   // Notes state
   const [newNote, setNewNote] = useState("");
@@ -713,6 +716,68 @@ export default function DocumentDetailPage({
                   </Button>
                 )}
               </div>
+
+              <Separator />
+
+              {/* Expiry Date */}
+              {(() => {
+                const expiresAt = doc.expiresAt;
+                const diffDays = expiresAt
+                  ? Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000)
+                  : null;
+                const expiryLabel = expiresAt
+                  ? new Date(expiresAt).toLocaleDateString("de-DE")
+                  : null;
+                const expiryColor =
+                  diffDays === null ? "" :
+                  diffDays < 0 ? "text-red-600" :
+                  diffDays <= 7 ? "text-red-500" :
+                  diffDays <= 30 ? "text-orange-500" : "text-muted-foreground";
+
+                return (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                    {editingExpiry ? (
+                      <Input
+                        type="date"
+                        defaultValue={expiresAt ? new Date(expiresAt).toISOString().split("T")[0] : ""}
+                        className="h-8 text-sm"
+                        autoFocus
+                        onBlur={(e) => {
+                          patchDocument({ expiresAt: e.target.value || null });
+                          setEditingExpiry(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          if (e.key === "Escape") setEditingExpiry(false);
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto px-2 py-1 font-normal justify-start"
+                          onClick={() => setEditingExpiry(true)}
+                          title="Ablaufdatum bearbeiten"
+                        >
+                          <span className={expiryLabel ? expiryColor : "text-muted-foreground"}>
+                            {expiryLabel ?? "Kein Ablaufdatum"}
+                          </span>
+                        </Button>
+                        {diffDays !== null && diffDays < 0 && (
+                          <span className="text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded border border-red-200 font-medium">Abgelaufen</span>
+                        )}
+                        {diffDays !== null && diffDays >= 0 && diffDays <= 30 && (
+                          <span className={`text-[10px] px-1 py-0.5 rounded border font-medium ${diffDays <= 7 ? "bg-red-50 text-red-600 border-red-200" : "bg-orange-50 text-orange-600 border-orange-200"}`}>
+                            {diffDays === 0 ? "Heute" : diffDays === 1 ? "Morgen" : `in ${diffDays} Tagen`}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <Separator />
 

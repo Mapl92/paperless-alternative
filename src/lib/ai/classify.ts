@@ -8,6 +8,7 @@ export interface ClassificationResult {
   documentType: string | null;
   tags: string[];
   documentDate: string | null;
+  expiresAt: string | null;
   summary: string | null;
   extractedData: Record<string, unknown> | null;
   language: string;
@@ -64,6 +65,7 @@ Bestehende Dokumenttypen: ${JSON.stringify(existingDocumentTypes)}`;
       documentType: result.documentType || null,
       tags: Array.isArray(result.tags) ? result.tags.slice(0, 4) : [],
       documentDate: result.documentDate || null,
+      expiresAt: result.expiresAt || null,
       summary: result.summary || null,
       extractedData: result.extractedData || null,
       language: result.language || "de",

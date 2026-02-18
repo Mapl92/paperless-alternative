@@ -29,6 +29,8 @@ async function getDirectorySize(dirPath: string): Promise<number> {
 export async function GET() {
   const now = new Date();
   const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const dataDir = process.env.DATA_DIR || "./data";
 
   const [
@@ -42,6 +44,7 @@ export async function GET() {
     needsAttention,
     trendResult,
     dataDirBytes,
+    expiringDocs,
   ] = await Promise.all([
     prisma.document.count(),
     prisma.tag.count(),
@@ -105,6 +108,20 @@ export async function GET() {
 
     // Actual disk usage of the data directory
     getDirectorySize(dataDir),
+
+    // Documents expiring within 30 days (including already expired in last 30 days)
+    prisma.document.findMany({
+      where: { expiresAt: { gte: thirtyDaysAgo, lte: thirtyDaysFromNow } },
+      orderBy: { expiresAt: "asc" },
+      take: 8,
+      select: {
+        id: true,
+        title: true,
+        expiresAt: true,
+        correspondent: { select: { name: true } },
+        documentType: { select: { name: true } },
+      },
+    }),
   ]);
 
   // Disk stats (free / total) via statfs — Node 20 stable API
@@ -149,5 +166,6 @@ export async function GET() {
     recentDocuments: recentDocs,
     urgentTodos,
     needsAttention,
+    expiringDocuments: expiringDocs,
   });
 }

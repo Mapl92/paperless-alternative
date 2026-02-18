@@ -41,6 +41,7 @@ export async function PATCH(
       correspondentId,
       documentTypeId,
       documentDate,
+      expiresAt,
       tagIds,
     } = body;
 
@@ -53,6 +54,8 @@ export async function PATCH(
       updateData.documentTypeId = documentTypeId;
     if (documentDate !== undefined)
       updateData.documentDate = documentDate ? new Date(documentDate) : null;
+    if (expiresAt !== undefined)
+      updateData.expiresAt = expiresAt ? new Date(expiresAt) : null;
 
     if (tagIds !== undefined) {
       updateData.tags = {

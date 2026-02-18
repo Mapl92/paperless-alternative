@@ -25,6 +25,7 @@ interface DocumentData {
   title: string;
   thumbnailFile: string | null;
   documentDate: string | null;
+  expiresAt: string | null;
   createdAt: string;
   aiProcessed: boolean;
   correspondent: { id: string; name: string } | null;

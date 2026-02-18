@@ -15,6 +15,7 @@ model Document {
   archiveFile     String?
   thumbnailFile   String?
   documentDate    DateTime?
+  expiresAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   addedAt         DateTime  @default(now())

@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  AlertCircle,
   AlertTriangle,
   ArrowRight,
   Calendar,
   CheckSquare,
+  Clock,
   FileText,
   HardDrive,
   Tag,
@@ -40,6 +42,13 @@ interface DashboardData {
     freeBytes: number | null;
     totalBytes: number | null;
   };
+  expiringDocuments: Array<{
+    id: string;
+    title: string;
+    expiresAt: string;
+    correspondent: { name: string } | null;
+    documentType: { name: string } | null;
+  }>;
   monthlyTrend: Array<{ month: string; label: string; count: number }>;
   recentDocuments: Array<{
     id: string;
@@ -485,6 +494,63 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Expiring Documents */}
+          {!loading && (data?.expiringDocuments.length ?? 0) > 0 && (() => {
+            const now = Date.now();
+            const overdue = data!.expiringDocuments.filter(d => new Date(d.expiresAt).getTime() < now);
+            const upcoming = data!.expiringDocuments.filter(d => new Date(d.expiresAt).getTime() >= now);
+            return (
+              <Card className="border-red-200">
+                <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-red-500" />
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Ablaufende Dokumente
+                    </CardTitle>
+                    {overdue.length > 0 && (
+                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200 font-medium">
+                        {overdue.length} abgelaufen
+                      </span>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {data!.expiringDocuments.map((doc) => {
+                      const expires = new Date(doc.expiresAt);
+                      const diffDays = Math.ceil((expires.getTime() - now) / (1000 * 60 * 60 * 24));
+                      const isExpired = diffDays < 0;
+                      const isUrgent = !isExpired && diffDays <= 7;
+                      return (
+                        <Link key={doc.id} href={`/documents/${doc.id}`} className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/40 transition-colors group">
+                          <div className={`shrink-0 w-1.5 h-8 rounded-full ${isExpired ? "bg-red-500" : isUrgent ? "bg-orange-400" : "bg-yellow-400"}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{doc.title}</p>
+                            {doc.correspondent && (
+                              <p className="text-xs text-muted-foreground truncate">{doc.correspondent.name}</p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className={`text-xs font-semibold ${isExpired ? "text-red-600" : isUrgent ? "text-orange-600" : "text-yellow-700"}`}>
+                              {isExpired
+                                ? `vor ${Math.abs(diffDays)}T`
+                                : diffDays === 0 ? "Heute"
+                                : diffDays === 1 ? "Morgen"
+                                : `in ${diffDays}T`}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {expires.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                            </p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
         </div>
       </main>
