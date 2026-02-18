@@ -22,6 +22,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import EntityManagement from "./entity-management";
 import SignatureManagement from "./signature-management";
+import MatchingRules from "./matching-rules";
 
 const EMAIL_PRESETS: Record<string, { host: string; port: number }> = {
   gmail: { host: "imap.gmail.com", port: 993 },
@@ -206,6 +207,7 @@ export default function SettingsPage() {
           <TabsTrigger value="branding">Personalisierung</TabsTrigger>
           <TabsTrigger value="general">Allgemein</TabsTrigger>
           <TabsTrigger value="management">Verwaltung</TabsTrigger>
+          <TabsTrigger value="rules">Regeln</TabsTrigger>
           <TabsTrigger value="signatures">Unterschriften</TabsTrigger>
           <TabsTrigger value="ai">KI</TabsTrigger>
           <TabsTrigger value="embeddings" onClick={() => { if (embeddingStats.total === 0) fetchEmbeddingStats(); }}>Embeddings</TabsTrigger>
@@ -382,6 +384,18 @@ export default function SettingsPage() {
         {/* Management */}
         <TabsContent value="management" className="space-y-4 mt-4">
           <EntityManagement />
+        </TabsContent>
+
+        {/* Matching Rules */}
+        <TabsContent value="rules" className="space-y-4 mt-4">
+          <div>
+            <h2 className="text-lg font-semibold">Matching-Regeln</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Regeln überschreiben die KI-Klassifizierung deterministisch — z.B.{" "}
+              <em>"Inhalt enthält ‚Telekom' → Korrespondent: Deutsche Telekom"</em>.
+            </p>
+          </div>
+          <MatchingRules />
         </TabsContent>
 
         {/* Signatures */}

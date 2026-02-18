@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { performOCROnMultiplePages } from "./ocr";
 import { classifyDocument } from "./classify";
 import { generateEmbedding, storeEmbedding } from "./embeddings";
+import { applyMatchingRules } from "./apply-rules";
 import { getAISettings } from "./settings";
 import { saveThumbnail } from "@/lib/files/storage";
 import { execFile } from "child_process";
@@ -183,6 +184,13 @@ export async function processDocument(documentId: string, pdfBuffer: Buffer) {
         },
       },
     });
+
+    // Apply matching rules (run after AI classification, can override results)
+    try {
+      await applyMatchingRules(documentId);
+    } catch (ruleError) {
+      console.warn(`[rules] Failed to apply rules for ${documentId}:`, ruleError);
+    }
 
     // Generate and store embedding (non-blocking, errors are not fatal)
     try {

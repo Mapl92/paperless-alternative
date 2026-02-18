@@ -50,17 +50,19 @@ model Tag {
 }
 
 model Correspondent {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  createdAt DateTime   @default(now())
+  id        String         @id @default(uuid())
+  name      String         @unique
+  createdAt DateTime       @default(now())
   documents Document[]
+  matchingRules MatchingRule[]
 }
 
 model DocumentType {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  createdAt DateTime   @default(now())
+  id        String         @id @default(uuid())
+  name      String         @unique
+  createdAt DateTime       @default(now())
   documents Document[]
+  matchingRules MatchingRule[]
 }
 
 model Note {
@@ -153,6 +155,31 @@ model ApiLog {
 
   @@index([timestamp(sort: Desc)])
   @@index([type])
+}
+
+model MatchingRule {
+  id            String   @id @default(uuid())
+  name          String
+  order         Int      @default(0)
+  active        Boolean  @default(true)
+
+  // Matching condition
+  matchField    String   // "content" | "title"
+  matchOperator String   // "contains" | "startsWith" | "endsWith" | "exact" | "regex"
+  matchValue    String
+
+  // Actions
+  setCorrespondentId String?
+  setDocumentTypeId  String?
+  addTagIds          Json    @default("[]") // string[] of tag IDs
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  setCorrespondent Correspondent? @relation(fields: [setCorrespondentId], references: [id], onDelete: SetNull)
+  setDocumentType  DocumentType?  @relation(fields: [setDocumentTypeId], references: [id], onDelete: SetNull)
+
+  @@index([active, order])
 }
 
 model Todo {
