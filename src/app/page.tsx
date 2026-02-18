@@ -1,294 +1,398 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef } from "react";
-import { useSearchParams } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { DocumentGrid } from "@/components/documents/document-grid";
-import { FilterSidebar } from "@/components/documents/filter-sidebar";
-import { DateFilterBar } from "@/components/documents/date-filter-bar";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
-import { Bookmark, Search } from "lucide-react";
-import { useDebounce } from "@/lib/hooks/use-debounce";
-import { toast } from "sonner";
-import type { DateField, DatePreset } from "@/components/documents/filter-sidebar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  CheckSquare,
+  FileText,
+  Loader2,
+  Tag,
+  Upload,
+  User,
+} from "lucide-react";
+import { getPriority } from "@/lib/constants/todo";
 
-function resolveDatePreset(preset: DatePreset): { from: Date; to: Date } {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(today.getTime() + 86400000 - 1);
-  switch (preset) {
-    case "today":
-      return { from: today, to: endOfDay };
-    case "yesterday": {
-      const y = new Date(today.getTime() - 86400000);
-      return { from: y, to: new Date(y.getTime() + 86400000 - 1) };
-    }
-    case "last7days":
-      return { from: new Date(today.getTime() - 6 * 86400000), to: endOfDay };
-    case "last30days":
-      return { from: new Date(today.getTime() - 29 * 86400000), to: endOfDay };
-    case "thisYear":
-      return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay };
-  }
-}
-
-const SORT_OPTIONS = [
-  { value: "createdAt:desc", label: "Neueste zuerst" },
-  { value: "createdAt:asc", label: "Älteste zuerst" },
-  { value: "title:asc", label: "Titel A–Z" },
-  { value: "title:desc", label: "Titel Z–A" },
-  { value: "documentDate:desc", label: "Datum (neueste)" },
-  { value: "documentDate:asc", label: "Datum (älteste)" },
-] as const;
-
-interface SavedViewData {
-  id: string;
-  name: string;
-  filters: {
-    search?: string;
-    tagId?: string;
-    correspondentId?: string;
-    documentTypeId?: string;
-    dateField?: DateField;
-    datePreset?: DatePreset;
-    dateFrom?: string;
-    dateTo?: string;
+interface DashboardData {
+  stats: {
+    documents: number;
+    tags: number;
+    correspondents: number;
+    unprocessed: number;
+    todosOpen: number;
   };
-  sortField: string;
-  sortOrder: string;
+  monthlyTrend: Array<{ month: string; label: string; count: number }>;
+  recentDocuments: Array<{
+    id: string;
+    title: string;
+    thumbnailFile: string | null;
+    documentDate: string | null;
+    createdAt: string;
+    correspondent: { name: string } | null;
+    documentType: { name: string } | null;
+  }>;
+  urgentTodos: Array<{
+    id: string;
+    title: string;
+    dueDate: string | null;
+    priority: number;
+    document: { id: string; title: string } | null;
+  }>;
+  needsAttention: Array<{
+    id: string;
+    title: string;
+    thumbnailFile: string | null;
+    documentDate: string | null;
+    createdAt: string;
+    documentType: { name: string } | null;
+  }>;
 }
 
-export default function Home() {
-  return (
-    <Suspense>
-      <HomeContent />
-    </Suspense>
-  );
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Guten Morgen";
+  if (h < 18) return "Guten Tag";
+  return "Guten Abend";
 }
 
-function HomeContent() {
-  const searchParams = useSearchParams();
-  const viewId = searchParams.get("view");
+function formatDueDate(dueDate: string | null): { label: string; color: string } {
+  if (!dueDate) return { label: "", color: "" };
+  const due = new Date(dueDate);
+  const now = new Date();
+  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return { label: `${Math.abs(diffDays)}T überfällig`, color: "bg-red-100 text-red-700 border-red-200" };
+  if (diffDays === 0) return { label: "Heute", color: "bg-orange-100 text-orange-700 border-orange-200" };
+  if (diffDays === 1) return { label: "Morgen", color: "bg-orange-100 text-orange-700 border-orange-200" };
+  return { label: `In ${diffDays} Tagen`, color: "bg-yellow-100 text-yellow-700 border-yellow-200" };
+}
 
-  const [searchInput, setSearchInput] = useState("");
-  const search = useDebounce(searchInput, 300);
-  const [tagId, setTagId] = useState<string | undefined>();
-  const [correspondentId, setCorrespondentId] = useState<string | undefined>();
-  const [documentTypeId, setDocumentTypeId] = useState<string | undefined>();
-  const [sort, setSort] = useState("createdAt:desc");
-  const [dateField, setDateField] = useState<DateField>("documentDate");
-  const [dateFrom, setDateFrom] = useState<Date | undefined>();
-  const [dateTo, setDateTo] = useState<Date | undefined>();
-  const [datePreset, setDatePreset] = useState<DatePreset | undefined>();
+export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const [sortField, sortOrder] = sort.split(":");
-
-  // Compute effective date range
-  const effectiveDates = datePreset ? resolveDatePreset(datePreset) : { from: dateFrom, to: dateTo };
-  const documentDateFrom = dateField === "documentDate" && effectiveDates.from ? effectiveDates.from.toISOString() : undefined;
-  const documentDateTo = dateField === "documentDate" && effectiveDates.to ? effectiveDates.to.toISOString() : undefined;
-  const addedDateFrom = dateField === "addedAt" && effectiveDates.from ? effectiveDates.from.toISOString() : undefined;
-  const addedDateTo = dateField === "addedAt" && effectiveDates.to ? effectiveDates.to.toISOString() : undefined;
-
-  const [saveOpen, setSaveOpen] = useState(false);
-  const [saveName, setSaveName] = useState("");
-  const saveInputRef = useRef<HTMLInputElement>(null);
-
-  // Load saved view when ?view= changes
   useEffect(() => {
-    if (!viewId) return;
-    fetch("/api/saved-views")
+    fetch("/api/dashboard")
       .then((r) => r.json())
-      .then((views: SavedViewData[]) => {
-        const view = views.find((v) => v.id === viewId);
-        if (!view) return;
-        applyView(view);
-      })
-      .catch(() => {});
-  }, [viewId]);
+      .then(setData)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
-  function applyView(view: SavedViewData) {
-    const f = view.filters;
-    setSearchInput(f.search ?? "");
-    setTagId(f.tagId ?? undefined);
-    setCorrespondentId(f.correspondentId ?? undefined);
-    setDocumentTypeId(f.documentTypeId ?? undefined);
-    setSort(`${view.sortField}:${view.sortOrder}`);
-    setDateField(f.dateField ?? "documentDate");
-    if (f.datePreset) {
-      setDatePreset(f.datePreset);
-      setDateFrom(undefined);
-      setDateTo(undefined);
-    } else {
-      setDatePreset(undefined);
-      setDateFrom(f.dateFrom ? new Date(f.dateFrom) : undefined);
-      setDateTo(f.dateTo ? new Date(f.dateTo) : undefined);
-    }
-  }
-
-  async function handleSaveView() {
-    if (!saveName.trim()) return;
-
-    const filters: Record<string, string> = {};
-    if (searchInput) filters.search = searchInput;
-    if (tagId) filters.tagId = tagId;
-    if (correspondentId) filters.correspondentId = correspondentId;
-    if (documentTypeId) filters.documentTypeId = documentTypeId;
-    if (dateFrom || dateTo || datePreset) filters.dateField = dateField;
-    if (datePreset) {
-      filters.datePreset = datePreset;
-    } else {
-      if (dateFrom) filters.dateFrom = dateFrom.toISOString();
-      if (dateTo) filters.dateTo = dateTo.toISOString();
-    }
-
-    const res = await fetch("/api/saved-views", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: saveName.trim(),
-        filters,
-        sortField,
-        sortOrder,
-      }),
-    });
-
-    if (res.ok) {
-      toast.success("Ansicht gespeichert");
-      setSaveName("");
-      setSaveOpen(false);
-      window.dispatchEvent(new Event("saved-views-changed"));
-    } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.error ?? "Fehler beim Speichern");
-    }
-  }
+  const maxTrend = data ? Math.max(...data.monthlyTrend.map((m) => m.count), 1) : 1;
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Desktop Sidebar */}
       <div className="hidden md:flex">
         <Sidebar />
       </div>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
-        <div className="p-4 md:p-6">
+        <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
+
           {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold mb-4">Dokumente</h1>
-            <div className="flex gap-3 items-center">
-              <div className="relative max-w-md flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Dokumente durchsuchen..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={sort} onValueChange={setSort}>
-                <SelectTrigger size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SORT_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">{getGreeting()}</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Hier ist deine Dokumenten-Übersicht
+              </p>
+            </div>
+            <Button asChild>
+              <Link href="/upload">
+                <Upload className="mr-2 h-4 w-4" />
+                Hochladen
+              </Link>
+            </Button>
+          </div>
 
-              <Popover open={saveOpen} onOpenChange={setSaveOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="icon" title="Ansicht speichern">
-                    <Bookmark className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72" align="end">
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium">Ansicht speichern</p>
-                    <Input
-                      ref={saveInputRef}
-                      placeholder="Name der Ansicht..."
-                      value={saveName}
-                      onChange={(e) => setSaveName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveView();
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      onClick={handleSaveView}
-                      disabled={!saveName.trim()}
-                    >
-                      Speichern
-                    </Button>
+          {/* Stat Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Link href="/documents">
+              <Card className="hover:border-primary/40 transition-colors cursor-pointer">
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Dokumente</span>
+                    <FileText className="h-4 w-4 text-muted-foreground" />
                   </div>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-3xl font-bold">{data?.stats.documents ?? 0}</p>
+                  )}
+                  {!loading && (data?.stats.unprocessed ?? 0) > 0 && (
+                    <p className="text-xs text-orange-600 mt-1">
+                      {data?.stats.unprocessed} in Verarbeitung
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
 
-            {/* Date Filter Bar */}
-            <DateFilterBar
-              dateField={dateField}
-              onDateFieldChange={setDateField}
-              dateFrom={datePreset ? resolveDatePreset(datePreset).from : dateFrom}
-              dateTo={datePreset ? resolveDatePreset(datePreset).to : dateTo}
-              datePreset={datePreset}
-              onDateFromChange={setDateFrom}
-              onDateToChange={setDateTo}
-              onDatePresetChange={setDatePreset}
-            />
+            <Link href="/documents">
+              <Card className="hover:border-primary/40 transition-colors cursor-pointer">
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Tags</span>
+                    <Tag className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-3xl font-bold">{data?.stats.tags ?? 0}</p>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Link href="/documents">
+              <Card className="hover:border-primary/40 transition-colors cursor-pointer">
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Korrespondenten</span>
+                    <User className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-3xl font-bold">{data?.stats.correspondents ?? 0}</p>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Link href="/todos">
+              <Card className="hover:border-primary/40 transition-colors cursor-pointer">
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Offene Todos</span>
+                    <CheckSquare className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-3xl font-bold">{data?.stats.todosOpen ?? 0}</p>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
           </div>
 
-          {/* Content with sidebar */}
-          <div className="flex gap-6">
-            <FilterSidebar
-              selectedTagId={tagId}
-              selectedCorrespondentId={correspondentId}
-              selectedDocumentTypeId={documentTypeId}
-              onTagSelect={setTagId}
-              onCorrespondentSelect={setCorrespondentId}
-              onDocumentTypeSelect={setDocumentTypeId}
-              onApplyView={applyView}
-            />
+          {/* Trend + Todos Row */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* Monthly Trend */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Dokumente pro Monat
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="flex items-end gap-2 h-28">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="flex-1" style={{ height: `${30 + Math.random() * 60}%` }} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-end gap-2 h-28">
+                    {data?.monthlyTrend.map((m) => {
+                      const heightPct = Math.max((m.count / maxTrend) * 100, m.count > 0 ? 8 : 2);
+                      const isCurrentMonth = m.month === new Date().toISOString().slice(0, 7);
+                      return (
+                        <div key={m.month} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                          {m.count > 0 && (
+                            <span className="text-[10px] text-muted-foreground leading-none">
+                              {m.count}
+                            </span>
+                          )}
+                          <div
+                            className={`w-full rounded-t transition-all ${isCurrentMonth ? "bg-primary" : "bg-primary/40"}`}
+                            style={{ height: `${heightPct}%` }}
+                          />
+                          <span className="text-[10px] text-muted-foreground leading-none truncate w-full text-center">
+                            {m.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-            <div className="flex-1 min-w-0">
-              <DocumentGrid
-                search={search}
-                tagId={tagId}
-                correspondentId={correspondentId}
-                documentTypeId={documentTypeId}
-                sortField={sortField}
-                sortOrder={sortOrder}
-                documentDateFrom={documentDateFrom}
-                documentDateTo={documentDateTo}
-                addedDateFrom={addedDateFrom}
-                addedDateTo={addedDateTo}
-              />
-            </div>
+            {/* Urgent Todos */}
+            <Card>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Fällige Aufgaben
+                </CardTitle>
+                <Link href="/todos" className="text-xs text-primary hover:underline flex items-center gap-1">
+                  Alle <ArrowRight className="h-3 w-3" />
+                </Link>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                  </div>
+                ) : !data?.urgentTodos.length ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <CheckSquare className="h-8 w-8 text-green-500 mb-2" />
+                    <p className="text-sm text-muted-foreground">Keine fälligen Aufgaben</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {data.urgentTodos.map((todo) => {
+                      const prio = getPriority(todo.priority);
+                      const due = formatDueDate(todo.dueDate);
+                      return (
+                        <div key={todo.id} className="flex items-start gap-2 rounded-lg border p-2.5">
+                          <span className={`text-[10px] font-bold shrink-0 mt-0.5 px-1.5 py-0.5 rounded ${prio.bg} ${prio.color}`}>
+                            {prio.label}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{todo.title}</p>
+                            {todo.document && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {todo.document.title}
+                              </p>
+                            )}
+                          </div>
+                          {due.label && (
+                            <span className={`text-[10px] border rounded px-1.5 py-0.5 shrink-0 font-medium ${due.color}`}>
+                              {due.label}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
+
+          {/* Recent Documents */}
+          <Card>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Zuletzt hinzugefügt
+              </CardTitle>
+              <Link href="/documents" className="text-xs text-primary hover:underline flex items-center gap-1">
+                Alle Dokumente <ArrowRight className="h-3 w-3" />
+              </Link>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="space-y-2">
+                      <Skeleton className="aspect-[3/4] w-full rounded-lg" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : !data?.recentDocuments.length ? (
+                <div className="text-center py-8">
+                  <FileText className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Noch keine Dokumente</p>
+                  <Button asChild size="sm" className="mt-3">
+                    <Link href="/upload">Erstes Dokument hochladen</Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                  {data.recentDocuments.map((doc) => {
+                    const date = doc.documentDate || doc.createdAt;
+                    return (
+                      <Link key={doc.id} href={`/documents/${doc.id}`} className="group block">
+                        <div className="aspect-[3/4] rounded-lg bg-muted overflow-hidden mb-2 ring-0 group-hover:ring-2 group-hover:ring-primary/30 transition-all">
+                          {doc.thumbnailFile ? (
+                            <img
+                              src={`/api/documents/${doc.id}/file?type=thumbnail`}
+                              alt={doc.title}
+                              className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <FileText className="h-8 w-8 text-muted-foreground/30" />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs font-medium line-clamp-2 leading-tight">{doc.title}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(date).toLocaleDateString("de-DE")}
+                        </p>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Needs Attention */}
+          {!loading && (data?.needsAttention.length ?? 0) > 0 && (
+            <Card className="border-orange-200">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-orange-500" />
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Aufmerksamkeit benötigt
+                  </CardTitle>
+                  <span className="text-xs text-muted-foreground">(ohne Tags & Korrespondent)</span>
+                </div>
+                <Link href="/documents" className="text-xs text-primary hover:underline flex items-center gap-1">
+                  Alle <ArrowRight className="h-3 w-3" />
+                </Link>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                  {data!.needsAttention.map((doc) => {
+                    const date = doc.documentDate || doc.createdAt;
+                    return (
+                      <Link key={doc.id} href={`/documents/${doc.id}`} className="group block">
+                        <div className="aspect-[3/4] rounded-lg bg-muted overflow-hidden mb-2 ring-0 group-hover:ring-2 group-hover:ring-orange-400/50 transition-all border border-orange-200/60">
+                          {doc.thumbnailFile ? (
+                            <img
+                              src={`/api/documents/${doc.id}/file?type=thumbnail`}
+                              alt={doc.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <FileText className="h-8 w-8 text-muted-foreground/30" />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs font-medium line-clamp-2 leading-tight">{doc.title}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(date).toLocaleDateString("de-DE")}
+                        </p>
+                        {doc.documentType && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 mt-1">
+                            {doc.documentType.name}
+                          </Badge>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
         </div>
       </main>
 
-      {/* Mobile Bottom Nav */}
       <MobileNav />
     </div>
   );

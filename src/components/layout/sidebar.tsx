@@ -11,7 +11,7 @@ import {
   Search,
   Settings,
   LogOut,
-  Home,
+  LayoutDashboard,
   Bookmark,
   X,
   MessageCircle,
@@ -28,7 +28,8 @@ interface SavedView {
 }
 
 const navItems = [
-  { href: "/", label: "Dokumente", icon: Home },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/documents", label: "Dokumente", icon: FileText },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/search", label: "Suche", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
