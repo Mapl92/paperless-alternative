@@ -44,8 +44,12 @@ export async function GET(request: NextRequest) {
   const documentDateTo = searchParams.get("documentDateTo");
   const addedDateFrom = searchParams.get("addedDateFrom");
   const addedDateTo = searchParams.get("addedDateTo");
+  const trashed = searchParams.get("trashed") === "true";
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = {
+    // By default show only non-trashed docs; ?trashed=true shows only trashed
+    deletedAt: trashed ? { not: null } : null,
+  };
 
   if (search) {
     where.OR = [

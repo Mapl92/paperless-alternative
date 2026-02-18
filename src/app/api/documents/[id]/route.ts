@@ -84,10 +84,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const permanent = request.nextUrl.searchParams.get("permanent") === "true";
 
   try {
     const document = await prisma.document.findUnique({ where: { id } });
@@ -98,13 +99,28 @@ export async function DELETE(
       );
     }
 
-    // Delete files
-    if (document.originalFile) await deleteFile(document.originalFile);
-    if (document.archiveFile) await deleteFile(document.archiveFile);
-    if (document.thumbnailFile) await deleteFile(document.thumbnailFile);
+    if (permanent) {
+      // Hard delete — only allowed if already in trash
+      if (!document.deletedAt) {
+        return NextResponse.json(
+          { error: "Dokument muss zuerst in den Papierkorb verschoben werden" },
+          { status: 400 }
+        );
+      }
 
-    // Delete document (cascades to notes)
-    await prisma.document.delete({ where: { id } });
+      // Delete files first (best-effort), then DB record
+      if (document.originalFile) await deleteFile(document.originalFile).catch((err) => console.error(`Failed to delete ${document.originalFile}:`, err));
+      if (document.archiveFile) await deleteFile(document.archiveFile).catch((err) => console.error(`Failed to delete ${document.archiveFile}:`, err));
+      if (document.thumbnailFile) await deleteFile(document.thumbnailFile).catch((err) => console.error(`Failed to delete ${document.thumbnailFile}:`, err));
+
+      await prisma.document.delete({ where: { id } });
+    } else {
+      // Soft delete — move to trash
+      await prisma.document.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

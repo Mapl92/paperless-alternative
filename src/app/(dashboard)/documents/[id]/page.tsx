@@ -204,11 +204,12 @@ export default function DocumentDetailPage({
   }
 
   async function handleDelete() {
-    if (!confirm("Dokument wirklich löschen?")) return;
+    if (!confirm("Dokument in den Papierkorb verschieben?")) return;
     try {
-      await fetch(`/api/documents/${id}`, { method: "DELETE" });
-      toast.success("Dokument gelöscht");
-      router.push("/");
+      const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast.success("Dokument in den Papierkorb verschoben");
+      router.push("/documents");
     } catch {
       toast.error("Löschen fehlgeschlagen");
     }

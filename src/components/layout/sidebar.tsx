@@ -16,6 +16,7 @@ import {
   X,
   MessageCircle,
   ScanSearch,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,6 +55,7 @@ function SidebarContent() {
 
   const branding = useBranding();
   const [views, setViews] = useState<SavedView[]>([]);
+  const [trashCount, setTrashCount] = useState(0);
 
   useEffect(() => {
     fetch("/api/saved-views")
@@ -61,6 +63,13 @@ function SidebarContent() {
       .then(setViews)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetch("/api/documents?trashed=true&limit=1")
+      .then((r) => r.json())
+      .then((data) => setTrashCount(data.total ?? 0))
+      .catch(() => {});
+  }, [pathname]);
 
   // Listen for custom event when a view is saved
   useEffect(() => {
@@ -126,6 +135,25 @@ function SidebarContent() {
               {item.label}
             </Link>
           ))}
+
+          {/* Papierkorb */}
+          <Link
+            href="/trash"
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+              pathname === "/trash"
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="flex-1">Papierkorb</span>
+            {trashCount > 0 && (
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium">
+                {trashCount}
+              </span>
+            )}
+          </Link>
         </nav>
 
         {/* Saved Views */}

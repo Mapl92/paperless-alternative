@@ -86,9 +86,9 @@ export function BulkActionsBar({
   }
 
   async function handleDelete() {
-    if (!confirm(`${selectedCount} Dokument(e) wirklich löschen?`)) return;
-    const ok = await executeBulk({ action: "delete" });
-    if (ok) toast.success(`${selectedCount} Dokument(e) gelöscht`);
+    if (!confirm(`${selectedCount} Dokument(e) in den Papierkorb verschieben?`)) return;
+    const ok = await executeBulk({ action: "trash" });
+    if (ok) toast.success(`${selectedCount} Dokument(e) in den Papierkorb verschoben`);
   }
 
   const [exporting, setExporting] = useState(false);

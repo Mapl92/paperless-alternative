@@ -28,6 +28,7 @@ model Document {
   fileSize        Int
   pageCount       Int?
   mimeType        String    @default("application/pdf")
+  deletedAt       DateTime?
 
   correspondent Correspondent? @relation(fields: [correspondentId], references: [id], onDelete: SetNull)
   documentType  DocumentType?  @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)

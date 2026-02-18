@@ -76,6 +76,8 @@ export async function GET(request: NextRequest) {
        JOIN "Document" b ON a.id < b.id
        WHERE a.embedding IS NOT NULL
          AND b.embedding IS NOT NULL
+         AND a."deletedAt" IS NULL
+         AND b."deletedAt" IS NULL
          AND 1 - (a.embedding <=> b.embedding) > $1
        ORDER BY similarity DESC
        LIMIT 500`,
@@ -84,7 +86,7 @@ export async function GET(request: NextRequest) {
 
     if (result.rows.length === 0) {
       const scanned = await pool
-        .query(`SELECT COUNT(*) FROM "Document" WHERE embedding IS NOT NULL`)
+        .query(`SELECT COUNT(*) FROM "Document" WHERE embedding IS NOT NULL AND "deletedAt" IS NULL`)
         .then((r: { rows: Array<{ count: string }> }) => parseInt(r.rows[0].count));
       return NextResponse.json({ groups: [], scanned, threshold });
     }

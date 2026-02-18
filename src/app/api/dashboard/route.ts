@@ -51,14 +51,15 @@ export async function GET() {
     dataDirBytes,
     expiringDocs,
   ] = await Promise.all([
-    prisma.document.count(),
+    prisma.document.count({ where: { deletedAt: null } }),
     prisma.tag.count(),
     prisma.correspondent.count(),
-    prisma.document.count({ where: { aiProcessed: false } }),
+    prisma.document.count({ where: { aiProcessed: false, deletedAt: null } }),
     prisma.todo.count({ where: { completed: false } }),
 
     // Last 6 docs
     prisma.document.findMany({
+      where: { deletedAt: null },
       take: 6,
       orderBy: { createdAt: "desc" },
       select: {
@@ -87,7 +88,7 @@ export async function GET() {
 
     // Docs without tags AND without correspondent (need attention)
     prisma.document.findMany({
-      where: { tags: { none: {} }, correspondentId: null, aiProcessed: true },
+      where: { tags: { none: {} }, correspondentId: null, aiProcessed: true, deletedAt: null },
       take: 6,
       orderBy: { createdAt: "desc" },
       select: {
@@ -107,6 +108,7 @@ export async function GET() {
          COUNT(*)::int AS count
        FROM "Document"
        WHERE "createdAt" >= DATE_TRUNC('month', NOW()) - INTERVAL '5 months'
+         AND "deletedAt" IS NULL
        GROUP BY 1
        ORDER BY 1`
     ),
@@ -116,7 +118,7 @@ export async function GET() {
 
     // Documents expiring within 30 days (including already expired in last 30 days)
     prisma.document.findMany({
-      where: { expiresAt: { gte: thirtyDaysAgo, lte: thirtyDaysFromNow } },
+      where: { expiresAt: { gte: thirtyDaysAgo, lte: thirtyDaysFromNow }, deletedAt: null },
       orderBy: { expiresAt: "asc" },
       take: 8,
       select: {

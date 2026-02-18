@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
 
 async function textSearch(query: string, page: number, limit: number) {
   const where = {
+    deletedAt: null,
     OR: [
       { title: { contains: query, mode: "insensitive" as const } },
       { content: { contains: query, mode: "insensitive" as const } },
@@ -93,6 +94,7 @@ async function semanticSearch(query: string, page: number, limit: number) {
     `SELECT id, 1 - ("embedding" <=> $1::vector) as similarity
      FROM "Document"
      WHERE "embedding" IS NOT NULL
+       AND "deletedAt" IS NULL
      ORDER BY "embedding" <=> $1::vector
      LIMIT $2 OFFSET $3`,
     [vectorStr, limit, offset]
@@ -106,7 +108,7 @@ async function semanticSearch(query: string, page: number, limit: number) {
   });
 
   const countResult = await pool.query(
-    `SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL`
+    `SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL AND "deletedAt" IS NULL`
   );
   const total = parseInt(countResult.rows[0].count);
 
@@ -154,6 +156,7 @@ async function hybridSearch(query: string, page: number, limit: number) {
   // Get text search results (top 50 for fusion)
   const textResults = await prisma.document.findMany({
     where: {
+      deletedAt: null,
       OR: [
         { title: { contains: query, mode: "insensitive" } },
         { content: { contains: query, mode: "insensitive" } },
@@ -170,6 +173,7 @@ async function hybridSearch(query: string, page: number, limit: number) {
     `SELECT id, 1 - ("embedding" <=> $1::vector) as similarity
      FROM "Document"
      WHERE "embedding" IS NOT NULL
+       AND "deletedAt" IS NULL
      ORDER BY "embedding" <=> $1::vector
      LIMIT 50`,
     [vectorStr]

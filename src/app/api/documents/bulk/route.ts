@@ -6,7 +6,7 @@ import { deleteFile } from "@/lib/files/storage";
 const MAX_BULK_ITEMS = 500;
 
 interface BulkRequest {
-  action: "delete" | "addTags" | "removeTags" | "setCorrespondent" | "setDocumentType";
+  action: "delete" | "trash" | "restore" | "permanentDelete" | "addTags" | "removeTags" | "setCorrespondent" | "setDocumentType";
   documentIds: string[];
   tagIds?: string[];
   correspondentId?: string | null;
@@ -34,18 +34,38 @@ export async function POST(request: NextRequest) {
     }
 
     switch (action) {
-      case "delete": {
-        const documents = await prisma.document.findMany({
+      case "delete":
+      case "trash": {
+        // Soft delete — move to trash
+        await prisma.document.updateMany({
           where: { id: { in: documentIds } },
+          data: { deletedAt: new Date() },
+        });
+
+        return NextResponse.json({ success: true, count: documentIds.length });
+      }
+
+      case "restore": {
+        await prisma.document.updateMany({
+          where: { id: { in: documentIds } },
+          data: { deletedAt: null },
+        });
+
+        return NextResponse.json({ success: true, count: documentIds.length });
+      }
+
+      case "permanentDelete": {
+        const documents = await prisma.document.findMany({
+          where: { id: { in: documentIds }, deletedAt: { not: null } },
           select: { id: true, originalFile: true, archiveFile: true, thumbnailFile: true },
         });
 
         // #11: Delete DB records first — if file deletion fails, data is still consistent
         await prisma.document.deleteMany({
-          where: { id: { in: documentIds } },
+          where: { id: { in: documents.map((d) => d.id) } },
         });
 
-        // Then delete files (best-effort, orphaned files are preferable to orphaned DB records)
+        // Then delete files (best-effort)
         for (const doc of documents) {
           if (doc.originalFile) await deleteFile(doc.originalFile).catch((err) => console.error(`Failed to delete ${doc.originalFile}:`, err));
           if (doc.archiveFile) await deleteFile(doc.archiveFile).catch((err) => console.error(`Failed to delete ${doc.archiveFile}:`, err));
