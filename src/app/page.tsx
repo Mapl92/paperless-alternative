@@ -14,12 +14,18 @@ import {
   Calendar,
   CheckSquare,
   FileText,
-  Loader2,
+  HardDrive,
   Tag,
   Upload,
   User,
 } from "lucide-react";
 import { getPriority } from "@/lib/constants/todo";
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
 
 interface DashboardData {
   stats: {
@@ -28,6 +34,11 @@ interface DashboardData {
     correspondents: number;
     unprocessed: number;
     todosOpen: number;
+  };
+  storage: {
+    usedBytes: number;
+    freeBytes: number | null;
+    totalBytes: number | null;
   };
   monthlyTrend: Array<{ month: string; label: string; count: number }>;
   recentDocuments: Array<{
@@ -114,7 +125,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Stat Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             <Link href="/documents">
               <Card className="hover:border-primary/40 transition-colors cursor-pointer">
                 <CardContent className="pt-5 pb-4">
@@ -183,6 +194,54 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
             </Link>
+
+            {/* Storage Card */}
+            <Card>
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-muted-foreground">Speicher</span>
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                </div>
+                {loading ? (
+                  <>
+                    <Skeleton className="h-8 w-20 mb-2" />
+                    <Skeleton className="h-1.5 w-full rounded-full" />
+                  </>
+                ) : (() => {
+                  const used = data?.storage.usedBytes ?? 0;
+                  const total = data?.storage.totalBytes ?? null;
+                  const free = data?.storage.freeBytes ?? null;
+                  const pct = total ? Math.min((used / total) * 100, 100) : null;
+                  const barColor =
+                    pct === null ? "bg-primary/60"
+                    : pct > 90 ? "bg-red-500"
+                    : pct > 70 ? "bg-orange-400"
+                    : "bg-primary/60";
+                  return (
+                    <>
+                      <p className="text-3xl font-bold leading-none mb-2">
+                        {formatBytes(used)}
+                      </p>
+                      {pct !== null && (
+                        <div className="w-full bg-muted rounded-full h-1.5 mb-1.5">
+                          <div
+                            className={`h-1.5 rounded-full transition-all ${barColor}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
+                      {free !== null && total !== null ? (
+                        <p className="text-xs text-muted-foreground">
+                          {formatBytes(free)} frei von {formatBytes(total)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Dokumente</p>
+                      )}
+                    </>
+                  );
+                })()}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Trend + Todos Row */}
