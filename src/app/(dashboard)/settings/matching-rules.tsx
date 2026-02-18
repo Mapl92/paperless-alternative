@@ -59,12 +59,17 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const OPERATOR_LABELS: Record<string, string> = {
-  contains: "enthält",
+  contains:   "enthält",
   startsWith: "beginnt mit",
-  endsWith: "endet mit",
-  exact: "ist genau",
-  regex: "Regex",
+  endsWith:   "endet mit",
+  exact:      "ist genau",
+  regex:      "Regex",
+  anyWord:    "enthält eines von",
+  allWords:   "enthält alle von",
+  fuzzy:      "ähnelt (Fuzzy)",
 };
+
+const MULTI_VALUE_OPERATORS = ["anyWord", "allWords"];
 
 const EMPTY_FORM = {
   name: "",
@@ -421,6 +426,9 @@ export default function MatchingRules() {
                       <SelectItem value="endsWith">endet mit</SelectItem>
                       <SelectItem value="exact">ist genau</SelectItem>
                       <SelectItem value="regex">Regex</SelectItem>
+                      <SelectItem value="anyWord">enthält eines von (kommagetrennt)</SelectItem>
+                      <SelectItem value="allWords">enthält alle von (kommagetrennt)</SelectItem>
+                      <SelectItem value="fuzzy">ähnelt (Fuzzy ~82 % Übereinstimmung)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -429,7 +437,15 @@ export default function MatchingRules() {
                 <Label className="text-xs">Wert</Label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="z.B. Deutsche Telekom AG"
+                    placeholder={
+                      MULTI_VALUE_OPERATORS.includes(form.matchOperator)
+                        ? "z.B. Telekom, T-Mobile, T-Com"
+                        : form.matchOperator === "fuzzy"
+                        ? "z.B. Telekom (Tippfehler-tolerant)"
+                        : form.matchOperator === "regex"
+                        ? "z.B. Rechnung\\s*Nr\\.\\s*\\d+"
+                        : "z.B. Deutsche Telekom AG"
+                    }
                     value={form.matchValue}
                     onChange={(e) => { setForm((f) => ({ ...f, matchValue: e.target.value })); setTestCount(null); }}
                   />
@@ -437,6 +453,19 @@ export default function MatchingRules() {
                     {testLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Test"}
                   </Button>
                 </div>
+                {MULTI_VALUE_OPERATORS.includes(form.matchOperator) && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Mehrere Begriffe kommagetrennt eingeben.{" "}
+                    {form.matchOperator === "anyWord"
+                      ? "Trifft zu wenn mindestens einer vorkommt."
+                      : "Trifft zu wenn alle vorkommen."}
+                  </p>
+                )}
+                {form.matchOperator === "fuzzy" && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Matcht auch bei OCR-Fehlern (≥ 82 % Zeichenähnlichkeit). Z.B. "Teleköm" → "Telekom".
+                  </p>
+                )}
               </div>
 
               {testCount !== null && (

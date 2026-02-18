@@ -1,6 +1,43 @@
 import { prisma } from "@/lib/db/prisma";
 
-function matchesCondition(
+/** Levenshtein edit distance between two strings. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Fuzzy-match: checks whether any whitespace-separated word in `fieldValue`
+ * is at least `threshold` (0–1) similar to `pattern` via normalised edit distance.
+ * Default threshold: 0.82 (~2 typos in a 12-char word).
+ */
+function fuzzyMatch(fieldValue: string, pattern: string, threshold = 0.82): boolean {
+  const p = pattern.toLowerCase();
+  const words = fieldValue.toLowerCase().split(/\s+/);
+  return words.some((word) => {
+    const maxLen = Math.max(word.length, p.length);
+    if (maxLen === 0) return true;
+    return 1 - levenshtein(word, p) / maxLen >= threshold;
+  });
+}
+
+/** Parse a comma-separated matchValue into trimmed, non-empty terms. */
+function parseTerms(matchValue: string): string[] {
+  return matchValue.split(",").map((t) => t.trim()).filter(Boolean);
+}
+
+export function matchesCondition(
   fieldValue: string,
   operator: string,
   matchValue: string
@@ -15,6 +52,20 @@ function matchesCondition(
     case "regex": {
       try { return new RegExp(matchValue, "i").test(fieldValue); }
       catch { return false; }
+    }
+    // "Eines der Wörter" — any term from comma-separated list appears in fieldValue
+    case "anyWord": {
+      const terms = parseTerms(matchValue);
+      return terms.length > 0 && terms.some((t) => v.includes(t.toLowerCase()));
+    }
+    // "Alle Wörter" — every term from comma-separated list must appear
+    case "allWords": {
+      const terms = parseTerms(matchValue);
+      return terms.length > 0 && terms.every((t) => v.includes(t.toLowerCase()));
+    }
+    // Fuzzy — Levenshtein similarity ≥ 82 % for any word in the field
+    case "fuzzy": {
+      return fuzzyMatch(fieldValue, matchValue);
     }
     default: return false;
   }
