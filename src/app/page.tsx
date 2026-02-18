@@ -196,35 +196,72 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="flex items-end gap-2 h-28">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <Skeleton key={i} className="flex-1" style={{ height: `${30 + Math.random() * 60}%` }} />
-                    ))}
+                  <div className="space-y-2">
+                    <div className="flex items-end gap-2 h-24">
+                      {[40, 70, 20, 55, 35, 90].map((h, i) => (
+                        <Skeleton key={i} className="flex-1 rounded-t" style={{ height: `${h}%` }} />
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <Skeleton key={i} className="flex-1 h-3" />
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex items-end gap-2 h-28">
-                    {data?.monthlyTrend.map((m) => {
-                      const heightPct = Math.max((m.count / maxTrend) * 100, m.count > 0 ? 8 : 2);
-                      const isCurrentMonth = m.month === new Date().toISOString().slice(0, 7);
-                      return (
-                        <div key={m.month} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                          {m.count > 0 && (
-                            <span className="text-[10px] text-muted-foreground leading-none">
-                              {m.count}
+                ) : (() => {
+                  const CHART_H = 96; // px — fixed chart area height
+                  const currentMonth = new Date().toISOString().slice(0, 7);
+                  return (
+                    <div className="space-y-1">
+                      {/* Count labels above bars */}
+                      <div className="flex gap-2">
+                        {data!.monthlyTrend.map((m) => (
+                          <div key={m.month} className="flex-1 text-center">
+                            <span className="text-[11px] font-medium text-foreground">
+                              {m.count > 0 ? m.count : ""}
                             </span>
-                          )}
-                          <div
-                            className={`w-full rounded-t transition-all ${isCurrentMonth ? "bg-primary" : "bg-primary/40"}`}
-                            style={{ height: `${heightPct}%` }}
-                          />
-                          <span className="text-[10px] text-muted-foreground leading-none truncate w-full text-center">
-                            {m.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Bars — fixed pixel height, aligned to bottom */}
+                      <div
+                        className="flex items-end gap-2 border-b border-muted"
+                        style={{ height: `${CHART_H}px` }}
+                      >
+                        {data!.monthlyTrend.map((m) => {
+                          const barH = maxTrend > 0
+                            ? Math.max((m.count / maxTrend) * CHART_H, m.count > 0 ? 4 : 0)
+                            : 0;
+                          const isCurrent = m.month === currentMonth;
+                          return (
+                            <div
+                              key={m.month}
+                              className={`flex-1 rounded-t transition-all ${
+                                isCurrent ? "bg-primary" : "bg-primary/35"
+                              }`}
+                              style={{ height: `${barH}px` }}
+                            />
+                          );
+                        })}
+                      </div>
+
+                      {/* Month labels below bars */}
+                      <div className="flex gap-2 pt-1">
+                        {data!.monthlyTrend.map((m) => {
+                          const isCurrent = m.month === new Date().toISOString().slice(0, 7);
+                          return (
+                            <div key={m.month} className="flex-1 text-center">
+                              <span className={`text-[11px] ${isCurrent ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                                {m.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
 
