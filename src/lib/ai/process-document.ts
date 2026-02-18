@@ -5,6 +5,7 @@ import { generateEmbedding, storeEmbedding } from "./embeddings";
 import { applyMatchingRules } from "./apply-rules";
 import { getAISettings } from "./settings";
 import { saveThumbnail } from "@/lib/files/storage";
+import { logAuditEvent } from "@/lib/audit";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, readFile, readdir, unlink, mkdtemp, rm } from "fs/promises";
@@ -186,6 +187,23 @@ export async function processDocument(documentId: string, pdfBuffer: Buffer) {
           connect: tagIds.map((id) => ({ id })),
         },
       },
+    });
+
+    // Log AI processing complete
+    logAuditEvent({
+      entityType: "document",
+      entityId: documentId,
+      entityTitle: classification.title,
+      action: "process",
+      changesSummary: `KI-Verarbeitung abgeschlossen (${pageCount} Seite${pageCount === 1 ? "" : "n"})`,
+      newValues: {
+        title: classification.title,
+        correspondent: classification.correspondent,
+        documentType: classification.documentType,
+        tags: classification.tags,
+        documentDate: classification.documentDate,
+      },
+      source: "ai",
     });
 
     // Apply matching rules (run after AI classification, can override results)

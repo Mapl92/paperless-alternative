@@ -28,17 +28,21 @@ import {
   ChevronsUpDown,
   Download,
   FileText,
+  FileUp,
   Loader2,
   MessageSquarePlus,
-  PenLine,
   Pencil,
+  PenLine,
   RefreshCw,
+  RotateCcw,
   Save,
+  Sparkles,
   Square,
   Tag,
   Trash2,
   User,
   X,
+  Zap,
 } from "lucide-react";
 import SigningOverlay from "@/components/signatures/signing-overlay";
 import { toast } from "sonner";
@@ -140,6 +144,35 @@ export default function DocumentDetailPage({
   const [savingTodo, setSavingTodo] = useState(false);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const parseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Activity log state
+  interface AuditLogEntry {
+    id: string;
+    timestamp: string;
+    action: string;
+    changesSummary: string | null;
+    source: string;
+  }
+  const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoaded, setActivityLoaded] = useState(false);
+
+  const loadActivity = useCallback(async () => {
+    if (activityLoaded) return;
+    setActivityLoading(true);
+    try {
+      const res = await fetch(`/api/audit-logs?entityId=${id}&limit=100`);
+      if (res.ok) {
+        const data = await res.json();
+        setActivityLogs(data.logs);
+        setActivityLoaded(true);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [id, activityLoaded]);
 
   const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -1098,6 +1131,80 @@ export default function DocumentDetailPage({
               </CardContent>
             </Card>
           )}
+
+          {/* Activity Log */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Aktivität
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={loadActivity}
+                  disabled={activityLoading}
+                >
+                  <RefreshCw className={`h-3 w-3 ${activityLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!activityLoaded && !activityLoading ? (
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={loadActivity}
+                >
+                  Aktivitäten laden
+                </button>
+              ) : activityLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Laden...
+                </div>
+              ) : activityLogs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Keine Aktivitäten aufgezeichnet</p>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-[7px] top-0 bottom-0 w-px bg-border" />
+                  <div className="space-y-3">
+                    {activityLogs.map((entry) => {
+                      const Icon =
+                        entry.action === "upload" ? FileUp :
+                        entry.action === "update" && entry.source === "rules" ? Zap :
+                        entry.action === "update" ? Pencil :
+                        entry.action === "trash" ? Trash2 :
+                        entry.action === "restore" ? RotateCcw :
+                        entry.action === "delete" ? Trash2 :
+                        entry.action === "process" ? Sparkles :
+                        entry.action === "bulk" ? PenLine :
+                        Pencil;
+
+                      return (
+                        <div key={entry.id} className="flex gap-3 relative pl-5">
+                          <div className="absolute left-0 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background border">
+                            <Icon className="h-2 w-2 text-muted-foreground" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted-foreground leading-snug">
+                              {entry.changesSummary || entry.action}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                              {new Date(entry.timestamp).toLocaleString("de-DE")}
+                              {entry.source !== "ui" && (
+                                <span className="ml-1 opacity-70">· {entry.source}</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
 

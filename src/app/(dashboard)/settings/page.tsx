@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Save, Loader2, Trash2, RefreshCw, Mail, ChevronDown, ChevronUp, Palette, Upload, X, Database } from "lucide-react";
+import { Save, Loader2, Trash2, RefreshCw, Mail, ChevronDown, ChevronUp, Palette, Upload, X, Database, Activity } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import EntityManagement from "./entity-management";
@@ -126,6 +126,45 @@ export default function SettingsPage() {
     }
   };
 
+  // Audit logs
+  interface AuditLog {
+    id: string;
+    timestamp: string;
+    entityType: string;
+    entityId: string;
+    entityTitle: string | null;
+    action: string;
+    changesSummary: string | null;
+    source: string;
+    bulkId: string | null;
+  }
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditTotalPages, setAuditTotalPages] = useState(0);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditEntityType, setAuditEntityType] = useState("all");
+  const [auditAction, setAuditAction] = useState("all");
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  const fetchAuditLogs = async (page = 1, entityType = auditEntityType, action = auditAction) => {
+    setAuditLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: "50" });
+      if (entityType !== "all") params.set("entityType", entityType);
+      if (action !== "all") params.set("action", action);
+      const res = await fetch(`/api/audit-logs?${params}`);
+      const data = await res.json();
+      setAuditLogs(data.logs);
+      setAuditTotalPages(data.totalPages);
+      setAuditTotal(data.total);
+      setAuditPage(page);
+    } catch {
+      // ignore
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!embeddingPolling) return;
     const interval = setInterval(async () => {
@@ -213,6 +252,7 @@ export default function SettingsPage() {
           <TabsTrigger value="embeddings" onClick={() => { if (embeddingStats.total === 0) fetchEmbeddingStats(); }}>Embeddings</TabsTrigger>
           <TabsTrigger value="email">E-Mail</TabsTrigger>
           <TabsTrigger value="logs" onClick={() => { if (logs.length === 0) fetchLogs(1, logsType); }}>Logs</TabsTrigger>
+          <TabsTrigger value="activity" onClick={() => { if (auditLogs.length === 0) fetchAuditLogs(1, auditEntityType, auditAction); }}>Aktivitätslog</TabsTrigger>
           <TabsTrigger value="security">Sicherheit</TabsTrigger>
         </TabsList>
 
@@ -971,6 +1011,163 @@ export default function SettingsPage() {
                       size="sm"
                       disabled={logsPage >= logsTotalPages}
                       onClick={() => fetchLogs(logsPage + 1, logsType)}
+                    >
+                      Weiter
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Activity Log */}
+        <TabsContent value="activity" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Aktivitätslog ({auditTotal})
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={auditEntityType}
+                    onValueChange={(v) => {
+                      setAuditEntityType(v);
+                      fetchAuditLogs(1, v, auditAction);
+                    }}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Alle Entitäten" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Alle Entitäten</SelectItem>
+                      <SelectItem value="document">Dokumente</SelectItem>
+                      <SelectItem value="tag">Tags</SelectItem>
+                      <SelectItem value="correspondent">Korrespondenten</SelectItem>
+                      <SelectItem value="documentType">Dokumenttypen</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={auditAction}
+                    onValueChange={(v) => {
+                      setAuditAction(v);
+                      fetchAuditLogs(1, auditEntityType, v);
+                    }}
+                  >
+                    <SelectTrigger className="w-36">
+                      <SelectValue placeholder="Alle Aktionen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Alle Aktionen</SelectItem>
+                      <SelectItem value="upload">Upload</SelectItem>
+                      <SelectItem value="update">Änderung</SelectItem>
+                      <SelectItem value="trash">Papierkorb</SelectItem>
+                      <SelectItem value="restore">Wiederhergestellt</SelectItem>
+                      <SelectItem value="delete">Gelöscht</SelectItem>
+                      <SelectItem value="process">KI-Verarbeitung</SelectItem>
+                      <SelectItem value="bulk">Bulk</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => fetchAuditLogs(auditPage, auditEntityType, auditAction)}
+                    disabled={auditLoading}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${auditLoading ? "animate-spin" : ""}`} />
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={async () => {
+                      if (!confirm("Alle Aktivitätslogs löschen?")) return;
+                      await fetch("/api/audit-logs", { method: "DELETE" });
+                      toast.success("Aktivitätslog gelöscht");
+                      fetchAuditLogs(1, auditEntityType, auditAction);
+                    }}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" />
+                    Löschen
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-3">Zeitpunkt</th>
+                      <th className="pb-2 pr-3">Entität</th>
+                      <th className="pb-2 pr-3">Aktion</th>
+                      <th className="pb-2 pr-3">Zusammenfassung</th>
+                      <th className="pb-2">Quelle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="py-2 pr-3 whitespace-nowrap text-xs">
+                          {new Date(log.timestamp).toLocaleString("de-DE")}
+                        </td>
+                        <td className="py-2 pr-3 text-xs max-w-[160px]">
+                          {log.entityType === "document" ? (
+                            <a
+                              href={`/documents/${log.entityId}`}
+                              className="hover:underline text-blue-600 dark:text-blue-400 line-clamp-1"
+                            >
+                              {log.entityTitle ?? log.entityId.slice(0, 8)}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">{log.entityTitle ?? log.entityId.slice(0, 8)}</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {log.action}
+                          </Badge>
+                        </td>
+                        <td className="py-2 pr-3 text-xs text-muted-foreground max-w-[300px] truncate">
+                          {log.changesSummary ?? "—"}
+                        </td>
+                        <td className="py-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {log.source}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                    {auditLogs.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                          Keine Aktivitäten vorhanden
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {auditTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-xs text-muted-foreground">
+                    Seite {auditPage} von {auditTotalPages}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={auditPage <= 1}
+                      onClick={() => fetchAuditLogs(auditPage - 1, auditEntityType, auditAction)}
+                    >
+                      Zurück
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={auditPage >= auditTotalPages}
+                      onClick={() => fetchAuditLogs(auditPage + 1, auditEntityType, auditAction)}
                     >
                       Weiter
                     </Button>

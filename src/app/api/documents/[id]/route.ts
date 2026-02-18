@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { deleteFile } from "@/lib/files/storage";
+import { logAuditEvent, buildChangesSummary } from "@/lib/audit";
 
 export async function GET(
   _request: NextRequest,
@@ -45,6 +46,12 @@ export async function PATCH(
       tagIds,
     } = body;
 
+    // Load current state for audit diff
+    const before = await prisma.document.findUnique({
+      where: { id },
+      select: { title: true, correspondentId: true, documentTypeId: true, documentDate: true, expiresAt: true },
+    });
+
     const updateData: Record<string, unknown> = {};
 
     if (title !== undefined) updateData.title = title;
@@ -72,6 +79,38 @@ export async function PATCH(
         documentType: true,
       },
     });
+
+    // Log update event with diff
+    if (before) {
+      const oldVals: Record<string, unknown> = { ...before };
+      const newVals: Record<string, unknown> = {};
+      if (title !== undefined) newVals.title = title;
+      if (correspondentId !== undefined) newVals.correspondentId = correspondentId;
+      if (documentTypeId !== undefined) newVals.documentTypeId = documentTypeId;
+      if (documentDate !== undefined) newVals.documentDate = documentDate;
+      if (expiresAt !== undefined) newVals.expiresAt = expiresAt;
+
+      // Build name map for IDs
+      const nameMap: Record<string, string> = {};
+      if (document.correspondent) nameMap[document.correspondent.id] = document.correspondent.name;
+      if (document.documentType) nameMap[document.documentType.id] = document.documentType.name;
+      const prevCorrespondent = before.correspondentId ? await prisma.correspondent.findUnique({ where: { id: before.correspondentId }, select: { name: true } }) : null;
+      if (prevCorrespondent && before.correspondentId) nameMap[before.correspondentId] = prevCorrespondent.name;
+      const prevDocType = before.documentTypeId ? await prisma.documentType.findUnique({ where: { id: before.documentTypeId }, select: { name: true } }) : null;
+      if (prevDocType && before.documentTypeId) nameMap[before.documentTypeId] = prevDocType.name;
+
+      const summary = buildChangesSummary(oldVals, newVals, nameMap);
+      logAuditEvent({
+        entityType: "document",
+        entityId: id,
+        entityTitle: document.title,
+        action: "update",
+        changesSummary: summary || undefined,
+        oldValues: oldVals,
+        newValues: newVals,
+        source: "ui",
+      });
+    }
 
     return NextResponse.json(document);
   } catch (error) {
@@ -108,6 +147,16 @@ export async function DELETE(
         );
       }
 
+      // Log delete event before removing (title snapshot)
+      logAuditEvent({
+        entityType: "document",
+        entityId: id,
+        entityTitle: document.title,
+        action: "delete",
+        changesSummary: "Endgültig gelöscht",
+        source: "ui",
+      });
+
       // Delete files first (best-effort), then DB record
       if (document.originalFile) await deleteFile(document.originalFile).catch((err) => console.error(`Failed to delete ${document.originalFile}:`, err));
       if (document.archiveFile) await deleteFile(document.archiveFile).catch((err) => console.error(`Failed to delete ${document.archiveFile}:`, err));
@@ -119,6 +168,15 @@ export async function DELETE(
       await prisma.document.update({
         where: { id },
         data: { deletedAt: new Date() },
+      });
+
+      logAuditEvent({
+        entityType: "document",
+        entityId: id,
+        entityTitle: document.title,
+        action: "trash",
+        changesSummary: "In den Papierkorb verschoben",
+        source: "ui",
       });
     }
 

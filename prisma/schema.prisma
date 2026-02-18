@@ -202,3 +202,21 @@ model Todo {
   @@index([completed])
   @@index([dueDate])
 }
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  timestamp      DateTime @default(now())
+  entityType     String   // "document" | "tag" | "correspondent" | "documentType" | "rule"
+  entityId       String
+  entityTitle    String?  // Snapshot des Namens/Titels zum Zeitpunkt der Aktion
+  action         String   // "upload" | "update" | "trash" | "restore" | "delete" | "process" | "bulk"
+  changesSummary String?  @db.Text
+  oldValues      Json?
+  newValues      Json?
+  source         String   @default("ui") // "ui" | "email" | "consume" | "ai" | "rules"
+  bulkId         String?  // Gruppiert mehrere Einträge einer Bulk-Operation
+
+  @@index([timestamp(sort: Desc)])
+  @@index([entityType, entityId])
+  @@index([action])
+}

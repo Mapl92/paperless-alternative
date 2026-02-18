@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { deleteFile } from "@/lib/files/storage";
+import { logAuditEvent } from "@/lib/audit";
 
 // #16: Limit bulk operations to prevent DoS via oversized payloads
 const MAX_BULK_ITEMS = 500;
@@ -33,23 +34,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const bulkId = crypto.randomUUID();
+
     switch (action) {
       case "delete":
       case "trash": {
+        // Fetch titles before update for audit log
+        const docs = await prisma.document.findMany({
+          where: { id: { in: documentIds } },
+          select: { id: true, title: true },
+        });
+
         // Soft delete — move to trash
         await prisma.document.updateMany({
           where: { id: { in: documentIds } },
           data: { deletedAt: new Date() },
         });
 
+        for (const doc of docs) {
+          logAuditEvent({
+            entityType: "document",
+            entityId: doc.id,
+            entityTitle: doc.title,
+            action: "bulk",
+            changesSummary: "In den Papierkorb verschoben (Bulk)",
+            source: "ui",
+            bulkId,
+          });
+        }
+
         return NextResponse.json({ success: true, count: documentIds.length });
       }
 
       case "restore": {
+        const docs = await prisma.document.findMany({
+          where: { id: { in: documentIds } },
+          select: { id: true, title: true },
+        });
+
         await prisma.document.updateMany({
           where: { id: { in: documentIds } },
           data: { deletedAt: null },
         });
+
+        for (const doc of docs) {
+          logAuditEvent({
+            entityType: "document",
+            entityId: doc.id,
+            entityTitle: doc.title,
+            action: "bulk",
+            changesSummary: "Wiederhergestellt (Bulk)",
+            source: "ui",
+            bulkId,
+          });
+        }
 
         return NextResponse.json({ success: true, count: documentIds.length });
       }
@@ -57,8 +95,20 @@ export async function POST(request: NextRequest) {
       case "permanentDelete": {
         const documents = await prisma.document.findMany({
           where: { id: { in: documentIds }, deletedAt: { not: null } },
-          select: { id: true, originalFile: true, archiveFile: true, thumbnailFile: true },
+          select: { id: true, title: true, originalFile: true, archiveFile: true, thumbnailFile: true },
         });
+
+        for (const doc of documents) {
+          logAuditEvent({
+            entityType: "document",
+            entityId: doc.id,
+            entityTitle: doc.title,
+            action: "bulk",
+            changesSummary: "Endgültig gelöscht (Bulk)",
+            source: "ui",
+            bulkId,
+          });
+        }
 
         // #11: Delete DB records first — if file deletion fails, data is still consistent
         await prisma.document.deleteMany({
@@ -80,6 +130,12 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Keine Tags angegeben" }, { status: 400 });
         }
 
+        const tagNames = await prisma.tag.findMany({
+          where: { id: { in: tagIds } },
+          select: { name: true },
+        });
+        const tagSummary = tagNames.map((t) => t.name).join(", ");
+
         for (const docId of documentIds) {
           await prisma.document.update({
             where: { id: docId },
@@ -88,6 +144,14 @@ export async function POST(request: NextRequest) {
                 connect: tagIds.map((id) => ({ id })),
               },
             },
+          });
+          logAuditEvent({
+            entityType: "document",
+            entityId: docId,
+            action: "bulk",
+            changesSummary: `Tags hinzugefügt: ${tagSummary}`,
+            source: "ui",
+            bulkId,
           });
         }
 
@@ -99,6 +163,12 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Keine Tags angegeben" }, { status: 400 });
         }
 
+        const tagNames = await prisma.tag.findMany({
+          where: { id: { in: tagIds } },
+          select: { name: true },
+        });
+        const tagSummary = tagNames.map((t) => t.name).join(", ");
+
         for (const docId of documentIds) {
           await prisma.document.update({
             where: { id: docId },
@@ -108,25 +178,79 @@ export async function POST(request: NextRequest) {
               },
             },
           });
+          logAuditEvent({
+            entityType: "document",
+            entityId: docId,
+            action: "bulk",
+            changesSummary: `Tags entfernt: ${tagSummary}`,
+            source: "ui",
+            bulkId,
+          });
         }
 
         return NextResponse.json({ success: true, count: documentIds.length });
       }
 
       case "setCorrespondent": {
+        const docs = await prisma.document.findMany({
+          where: { id: { in: documentIds } },
+          select: { id: true, title: true },
+        });
+
         await prisma.document.updateMany({
           where: { id: { in: documentIds } },
           data: { correspondentId: correspondentId || null },
         });
 
+        let corrName = "—";
+        if (correspondentId) {
+          const corr = await prisma.correspondent.findUnique({ where: { id: correspondentId }, select: { name: true } });
+          if (corr) corrName = corr.name;
+        }
+
+        for (const doc of docs) {
+          logAuditEvent({
+            entityType: "document",
+            entityId: doc.id,
+            entityTitle: doc.title,
+            action: "bulk",
+            changesSummary: `Korrespondent gesetzt: ${corrName}`,
+            source: "ui",
+            bulkId,
+          });
+        }
+
         return NextResponse.json({ success: true, count: documentIds.length });
       }
 
       case "setDocumentType": {
+        const docs = await prisma.document.findMany({
+          where: { id: { in: documentIds } },
+          select: { id: true, title: true },
+        });
+
         await prisma.document.updateMany({
           where: { id: { in: documentIds } },
           data: { documentTypeId: documentTypeId || null },
         });
+
+        let typeName = "—";
+        if (documentTypeId) {
+          const dtype = await prisma.documentType.findUnique({ where: { id: documentTypeId }, select: { name: true } });
+          if (dtype) typeName = dtype.name;
+        }
+
+        for (const doc of docs) {
+          logAuditEvent({
+            entityType: "document",
+            entityId: doc.id,
+            entityTitle: doc.title,
+            action: "bulk",
+            changesSummary: `Dokumenttyp gesetzt: ${typeName}`,
+            source: "ui",
+            bulkId,
+          });
+        }
 
         return NextResponse.json({ success: true, count: documentIds.length });
       }

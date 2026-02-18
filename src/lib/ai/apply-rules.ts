@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { logAuditEvent } from "@/lib/audit";
 
 /** Levenshtein edit distance between two strings. */
 function levenshtein(a: string, b: string): number {
@@ -130,6 +131,18 @@ export async function applyMatchingRules(
   console.log(
     `[rules] Applied ${appliedNames.length} rule(s) to ${documentId}: ${appliedNames.join(", ")}`
   );
+
+  // Load updated document title for audit log
+  const updated = await prisma.document.findUnique({ where: { id: documentId }, select: { title: true } });
+  logAuditEvent({
+    entityType: "document",
+    entityId: documentId,
+    entityTitle: updated?.title,
+    action: "update",
+    changesSummary: `Matching-Regeln angewendet: ${appliedNames.join(", ")}`,
+    source: "rules",
+  });
+
   return { applied: appliedNames.length, ruleNames: appliedNames };
 }
 

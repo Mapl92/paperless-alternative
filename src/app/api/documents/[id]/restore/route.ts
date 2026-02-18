@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { logAuditEvent } from "@/lib/audit";
 
 export async function POST(
   _request: NextRequest,
@@ -19,6 +20,15 @@ export async function POST(
     await prisma.document.update({
       where: { id },
       data: { deletedAt: null },
+    });
+
+    logAuditEvent({
+      entityType: "document",
+      entityId: id,
+      entityTitle: document.title,
+      action: "restore",
+      changesSummary: "Aus dem Papierkorb wiederhergestellt",
+      source: "ui",
     });
 
     return NextResponse.json({ success: true });

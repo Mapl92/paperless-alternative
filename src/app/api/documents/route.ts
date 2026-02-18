@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { saveOriginal } from "@/lib/files/storage";
 import { processDocument } from "@/lib/ai/process-document";
+import { logAuditEvent } from "@/lib/audit";
 
 // #12: Max 100 MB per file, max 20 files per request
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -153,6 +154,16 @@ export async function POST(request: NextRequest) {
           checksum,
           mimeType: file.type || "application/pdf",
         },
+      });
+
+      // Log upload event
+      logAuditEvent({
+        entityType: "document",
+        entityId: document.id,
+        entityTitle: document.title,
+        action: "upload",
+        newValues: { title: document.title, fileSize, mimeType: file.type || "application/pdf" },
+        source: "ui",
       });
 
       // #9: Schedule with concurrency limit (max 2 parallel AI jobs)
