@@ -224,14 +224,15 @@ model AuditLog {
 }
 
 model ShareLink {
-  id         String   @id @default(uuid())
-  token      String   @unique
-  documentId String
-  r2Key      String
-  fileName   String
-  expiresAt  DateTime
-  downloads  Int      @default(0)
-  createdAt  DateTime @default(now())
+  id           String   @id @default(uuid())
+  token        String   @unique
+  documentId   String
+  r2Key        String
+  fileName     String
+  presignedUrl String   @default("")
+  expiresAt    DateTime
+  downloads    Int      @default(0)
+  createdAt    DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 

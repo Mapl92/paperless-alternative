@@ -1,0 +1,1 @@
+ALTER TABLE "ShareLink" ADD COLUMN "presignedUrl" TEXT NOT NULL DEFAULT '';

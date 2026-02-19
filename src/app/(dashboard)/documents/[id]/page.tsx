@@ -235,6 +235,7 @@ export default function DocumentDetailPage({
     id: string;
     token: string;
     fileName: string;
+    presignedUrl: string;
     expiresAt: string;
     downloads: number;
     createdAt: string;
@@ -288,10 +289,9 @@ export default function DocumentDetailPage({
     }
   }
 
-  async function handleCopyShareLink(token: string) {
-    const url = `${window.location.origin}/api/share/${token}`;
-    await navigator.clipboard.writeText(url).catch(() => {});
-    setCopiedToken(token);
+  async function handleCopyShareLink(linkId: string, presignedUrl: string) {
+    await navigator.clipboard.writeText(presignedUrl).catch(() => {});
+    setCopiedToken(linkId);
     setTimeout(() => setCopiedToken(null), 2000);
   }
 
@@ -1386,11 +1386,11 @@ export default function DocumentDetailPage({
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                         {!expired && (
                           <button
-                            onClick={() => handleCopyShareLink(link.token)}
+                            onClick={() => handleCopyShareLink(link.id, link.presignedUrl)}
                             className="p-1 rounded hover:bg-primary/10 hover:text-primary"
                             title="Link kopieren"
                           >
-                            {copiedToken === link.token
+                            {copiedToken === link.id
                               ? <Check className="h-3 w-3 text-green-600" />
                               : <Copy className="h-3 w-3 text-muted-foreground" />
                             }
@@ -1679,9 +1679,9 @@ export default function DocumentDetailPage({
               <div className="grid grid-cols-4 gap-2 mt-2">
                 {[
                   { value: "1h",  label: "1 Stunde" },
-                  { value: "24h", label: "24 Stunden" },
+                  { value: "24h", label: "24 Std." },
+                  { value: "3d",  label: "3 Tage" },
                   { value: "7d",  label: "7 Tage" },
-                  { value: "30d", label: "30 Tage" },
                 ].map((opt) => (
                   <button
                     key={opt.value}
@@ -1698,8 +1698,9 @@ export default function DocumentDetailPage({
               </div>
             </div>
             <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
-              <p>• Der Link funktioniert ohne Login</p>
-              <p>• Datei wird in Cloudflare R2 gespeichert</p>
+              <p>• Der Link funktioniert weltweit ohne Login</p>
+              <p>• Download läuft direkt über Cloudflare (nicht den Pi)</p>
+              <p>• Max. 7 Tage Gültigkeit (R2-Limit)</p>
               <p>• Link kann jederzeit widerrufen werden</p>
             </div>
           </div>
