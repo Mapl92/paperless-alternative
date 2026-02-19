@@ -12,6 +12,7 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
+  Bell,
   Calendar,
   CheckSquare,
   Clock,
@@ -94,9 +95,18 @@ function formatDueDate(dueDate: string | null): { label: string; color: string }
   return { label: `In ${diffDays} Tagen`, color: "bg-yellow-100 text-yellow-700 border-yellow-200" };
 }
 
+interface PendingReminder {
+  id: string;
+  title: string;
+  note: string | null;
+  remindAt: string;
+  document: { id: string; title: string } | null;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingReminders, setPendingReminders] = useState<PendingReminder[]>([]);
 
   useEffect(() => {
     fetch("/api/dashboard")
@@ -104,6 +114,11 @@ export default function DashboardPage() {
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    fetch("/api/reminders/pending")
+      .then((r) => r.json())
+      .then((d) => setPendingReminders(d.reminders ?? []))
+      .catch(() => {});
   }, []);
 
   const maxTrend = data ? Math.max(...data.monthlyTrend.map((m) => m.count), 1) : 1;
@@ -384,6 +399,51 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Pending Reminders */}
+          {pendingReminders.length > 0 && (
+            <Card className="border-red-200">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-red-500" />
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Fällige Erinnerungen
+                  </CardTitle>
+                  <span className="rounded-full bg-red-500 text-white px-1.5 py-0.5 text-xs font-medium leading-none">
+                    {pendingReminders.length}
+                  </span>
+                </div>
+                <Link href="/reminders" className="text-xs text-primary hover:underline flex items-center gap-1">
+                  Alle <ArrowRight className="h-3 w-3" />
+                </Link>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {pendingReminders.map((r) => {
+                    const diffMs = Date.now() - new Date(r.remindAt).getTime();
+                    const diffDays = Math.floor(diffMs / 86400000);
+                    const overdueLabel = diffDays === 0 ? "Heute fällig" : diffDays === 1 ? "Seit gestern fällig" : `Seit ${diffDays} Tagen fällig`;
+                    return (
+                      <div key={r.id} className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50/40 p-2.5">
+                        <Bell className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{r.title}</p>
+                          {r.document && (
+                            <Link href={`/documents/${r.document.id}`} className="text-xs text-muted-foreground hover:text-primary truncate block">
+                              {r.document.title}
+                            </Link>
+                          )}
+                        </div>
+                        <span className="text-[10px] border rounded px-1.5 py-0.5 shrink-0 font-medium bg-red-100 text-red-700 border-red-200">
+                          {overdueLabel}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Recent Documents */}
           <Card>

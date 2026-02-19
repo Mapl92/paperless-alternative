@@ -21,6 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
+  Bell,
   Calendar,
   Check,
   Clock,
@@ -33,6 +34,7 @@ import {
   MessageSquarePlus,
   Pencil,
   PenLine,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -208,6 +210,21 @@ export default function DocumentDetailPage({
       setSplitting(false);
     }
   }
+
+  // Reminders state
+  interface ReminderItem {
+    id: string;
+    title: string;
+    note: string | null;
+    remindAt: string;
+    dismissed: boolean;
+  }
+  const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  const [reminderMode, setReminderMode] = useState(false);
+  const [newReminderTitle, setNewReminderTitle] = useState("");
+  const [newReminderNote, setNewReminderNote] = useState("");
+  const [newReminderAt, setNewReminderAt] = useState("");
+  const [savingReminder, setSavingReminder] = useState(false);
 
   // Activity log state
   interface AuditLogEntry {
@@ -398,6 +415,66 @@ export default function DocumentDetailPage({
       .then((data) => { if (Array.isArray(data)) setTodos(data); })
       .catch(() => {});
   }, [id]);
+
+  // Load reminders for this document
+  useEffect(() => {
+    fetch(`/api/reminders?documentId=${id}&status=all&limit=20`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data.reminders)) setReminders(data.reminders); })
+      .catch(() => {});
+  }, [id]);
+
+  async function handleSaveReminder() {
+    if (!newReminderTitle.trim() || !newReminderAt) return;
+    setSavingReminder(true);
+    try {
+      const res = await fetch("/api/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newReminderTitle.trim(),
+          note: newReminderNote.trim() || null,
+          remindAt: new Date(newReminderAt).toISOString(),
+          documentId: id,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const created = await res.json();
+      setReminders((prev) => [created, ...prev]);
+      setReminderMode(false);
+      setNewReminderTitle("");
+      setNewReminderNote("");
+      setNewReminderAt("");
+      toast.success("Erinnerung erstellt");
+    } catch {
+      toast.error("Erinnerung konnte nicht erstellt werden");
+    } finally {
+      setSavingReminder(false);
+    }
+  }
+
+  async function handleDismissReminder(reminderId: string) {
+    setReminders((prev) => prev.map((r) => r.id === reminderId ? { ...r, dismissed: true } : r));
+    try {
+      await fetch(`/api/reminders/${reminderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dismissed: true }),
+      });
+    } catch {
+      setReminders((prev) => prev.map((r) => r.id === reminderId ? { ...r, dismissed: false } : r));
+    }
+  }
+
+  async function handleDeleteReminder(reminderId: string) {
+    setReminders((prev) => prev.filter((r) => r.id !== reminderId));
+    try {
+      await fetch(`/api/reminders/${reminderId}`, { method: "DELETE" });
+      toast.success("Erinnerung gelöscht");
+    } catch {
+      toast.error("Löschen fehlgeschlagen");
+    }
+  }
 
   // Handle @todo detection and AI parsing
   function handleNoteChange(text: string) {
@@ -1205,6 +1282,130 @@ export default function DocumentDetailPage({
               </CardContent>
             </Card>
           )}
+
+          {/* Reminders */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Bell className="h-3.5 w-3.5" />
+                  Erinnerungen
+                </CardTitle>
+                {!reminderMode && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + 1);
+                      d.setHours(9, 0, 0, 0);
+                      setNewReminderAt(d.toISOString().slice(0, 16));
+                      setReminderMode(true);
+                    }}
+                    title="Erinnerung hinzufügen"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Create form */}
+              {reminderMode && (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                    <Bell className="h-3 w-3" />
+                    Neue Erinnerung
+                  </div>
+                  <Input
+                    placeholder="Titel *"
+                    value={newReminderTitle}
+                    onChange={(e) => setNewReminderTitle(e.target.value)}
+                    className="text-sm h-8"
+                    autoFocus
+                  />
+                  <Input
+                    type="datetime-local"
+                    value={newReminderAt}
+                    onChange={(e) => setNewReminderAt(e.target.value)}
+                    className="text-sm h-8"
+                  />
+                  <Input
+                    placeholder="Notiz (optional)"
+                    value={newReminderNote}
+                    onChange={(e) => setNewReminderNote(e.target.value)}
+                    className="text-sm h-8"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveReminder}
+                      disabled={savingReminder || !newReminderTitle.trim() || !newReminderAt}
+                    >
+                      {savingReminder ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Check className="mr-1 h-3 w-3" />}
+                      Erstellen
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setReminderMode(false); setNewReminderTitle(""); setNewReminderNote(""); }}>
+                      Abbrechen
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Existing reminders */}
+              {reminders.length === 0 && !reminderMode ? (
+                <p className="text-xs text-muted-foreground">Keine Erinnerungen</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {reminders.map((r) => {
+                    const isDue = !r.dismissed && new Date(r.remindAt) <= new Date();
+                    const diffDays = Math.ceil((new Date(r.remindAt).getTime() - Date.now()) / 86400000);
+                    return (
+                      <div
+                        key={r.id}
+                        className={`group flex items-start gap-2 rounded-md p-2 ${
+                          isDue ? "bg-red-50/60" : r.dismissed ? "opacity-60" : "hover:bg-muted/50"
+                        } transition-colors`}
+                      >
+                        <Bell className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isDue ? "text-red-500" : "text-muted-foreground"}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-medium ${r.dismissed ? "line-through text-muted-foreground" : ""}`}>
+                            {r.title}
+                          </p>
+                          <p className={`text-[10px] mt-0.5 ${isDue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                            {new Date(r.remindAt).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            {isDue && " · Fällig"}
+                            {!r.dismissed && !isDue && diffDays === 0 && " · Heute"}
+                            {!r.dismissed && !isDue && diffDays === 1 && " · Morgen"}
+                            {!r.dismissed && !isDue && diffDays > 1 && ` · in ${diffDays} Tagen`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          {!r.dismissed && (
+                            <button
+                              onClick={() => handleDismissReminder(r.id)}
+                              className="p-1 rounded hover:bg-green-100 hover:text-green-700"
+                              title="Erledigt"
+                            >
+                              <Check className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteReminder(r.id)}
+                            className="p-1 rounded hover:bg-red-100 hover:text-red-700"
+                            title="Löschen"
+                          >
+                            <X className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Activity Log */}
           <Card>

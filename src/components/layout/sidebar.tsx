@@ -17,6 +17,7 @@ import {
   MessageCircle,
   ScanSearch,
   Trash2,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,6 +36,7 @@ const navItems = [
   { href: "/search", label: "Suche", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/todos", label: "Aufgaben", icon: CheckSquare },
+  { href: "/reminders", label: "Erinnerungen", icon: Bell },
   { href: "/duplicates", label: "Duplikate", icon: ScanSearch },
 ];
 
@@ -56,6 +58,7 @@ function SidebarContent() {
   const branding = useBranding();
   const [views, setViews] = useState<SavedView[]>([]);
   const [trashCount, setTrashCount] = useState(0);
+  const [reminderCount, setReminderCount] = useState(0);
 
   useEffect(() => {
     fetch("/api/saved-views")
@@ -69,6 +72,19 @@ function SidebarContent() {
       .then((r) => r.json())
       .then((data) => setTrashCount(data.total ?? 0))
       .catch(() => {});
+  }, [pathname]);
+
+  // Poll pending reminders count every 60 seconds
+  useEffect(() => {
+    function fetchPending() {
+      fetch("/api/reminders/pending")
+        .then((r) => r.json())
+        .then((data) => setReminderCount(data.count ?? 0))
+        .catch(() => {});
+    }
+    fetchPending();
+    const interval = setInterval(fetchPending, 60_000);
+    return () => clearInterval(interval);
   }, [pathname]);
 
   // Listen for custom event when a view is saved
@@ -120,21 +136,29 @@ function SidebarContent() {
       {/* Navigation */}
       <ScrollArea className="flex-1 px-3 py-3">
         <nav className="space-y-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                pathname === item.href && !activeViewId
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isReminders = item.href === "/reminders";
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                  pathname === item.href && !activeViewId
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{item.label}</span>
+                {isReminders && reminderCount > 0 && (
+                  <span className="rounded-full bg-red-500 text-white px-1.5 py-0.5 text-xs font-medium leading-none">
+                    {reminderCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
 
           {/* Papierkorb */}
           <Link
