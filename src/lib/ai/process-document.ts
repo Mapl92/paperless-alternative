@@ -4,13 +4,53 @@ import { classifyDocument } from "./classify";
 import { generateEmbedding, storeEmbedding } from "./embeddings";
 import { applyMatchingRules } from "./apply-rules";
 import { getAISettings } from "./settings";
-import { saveThumbnail } from "@/lib/files/storage";
+import { saveThumbnail, saveArchive } from "@/lib/files/storage";
 import { logAuditEvent } from "@/lib/audit";
+import { PDFDocument } from "pdf-lib";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, readFile, readdir, unlink, mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+
+// MIME types treated as single-page images (not PDFs)
+export const SUPPORTED_IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/tiff",
+  "image/webp",
+  "image/bmp",
+  "image/gif",
+]);
+
+export function isImageMimeType(mimeType: string): boolean {
+  return SUPPORTED_IMAGE_MIME_TYPES.has(mimeType.toLowerCase());
+}
+
+/**
+ * Convert an image buffer to a single-page PDF using pdf-lib.
+ * pdf-lib natively supports JPG and PNG; all other formats are converted to PNG via sharp first.
+ */
+async function imageToPdf(imageBuffer: Buffer, mimeType: string): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const pdfDoc = await PDFDocument.create();
+
+  let image;
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") {
+    image = await pdfDoc.embedJpg(imageBuffer);
+  } else {
+    // Normalise to PNG for all other formats (TIFF, WebP, BMP, GIF, …)
+    const pngBuffer = await sharp(imageBuffer).png().toBuffer();
+    image = await pdfDoc.embedPng(pngBuffer);
+  }
+
+  const { width, height } = image.size();
+  const page = pdfDoc.addPage([width, height]);
+  page.drawImage(image, { x: 0, y: 0, width, height });
+
+  return Buffer.from(await pdfDoc.save());
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -101,19 +141,45 @@ async function findOrCreateDocumentType(name: string) {
   }
 }
 
-export async function processDocument(documentId: string, pdfBuffer: Buffer) {
+export async function processDocument(documentId: string, fileBuffer: Buffer) {
   try {
     const sharp = (await import("sharp")).default;
 
-    // Load OCR page limit from settings
-    const aiSettings = await getAISettings();
+    // Determine whether this is an image or a PDF
+    const docRecord = await prisma.document.findUnique({
+      where: { id: documentId },
+      select: { mimeType: true },
+    });
+    const mimeType = docRecord?.mimeType ?? "application/pdf";
+    const isImage = isImageMimeType(mimeType);
 
-    // Convert PDF pages to PNG using pdftoppm
-    const pageImages = await pdfPagesToPng(pdfBuffer, aiSettings.ocrPageLimit);
-    const pageCount = pageImages.length;
+    let pageImages: Buffer[];
+    let pageCount: number;
+    let archivePath: string | null = null;
 
-    if (pageCount === 0) {
-      throw new Error("Keine Seiten aus PDF extrahiert");
+    if (isImage) {
+      // ── Image path ────────────────────────────────────────────────────────
+      // Use the original image directly as the single OCR page.
+      // Normalise to PNG so sharp can always handle it.
+      const normalised = await sharp(fileBuffer).png().toBuffer();
+      pageImages = [normalised];
+      pageCount = 1;
+
+      // Convert image to PDF and save as archiveFile so the PDF viewer works
+      const pdfBuffer = await imageToPdf(fileBuffer, mimeType);
+      archivePath = await saveArchive(pdfBuffer, documentId);
+    } else {
+      // ── PDF path ──────────────────────────────────────────────────────────
+      // Load OCR page limit from settings
+      const aiSettings = await getAISettings();
+      const pdfBuffer = fileBuffer;
+
+      pageImages = await pdfPagesToPng(pdfBuffer, aiSettings.ocrPageLimit);
+      pageCount = pageImages.length;
+
+      if (pageCount === 0) {
+        throw new Error("Keine Seiten aus PDF extrahiert");
+      }
     }
 
     // Generate thumbnail from first page
@@ -169,6 +235,8 @@ export async function processDocument(documentId: string, pdfBuffer: Buffer) {
         title: classification.title,
         content: ocrText,
         thumbnailFile: thumbnailPath,
+        // For images, store the generated PDF as archiveFile
+        ...(archivePath ? { archiveFile: archivePath } : {}),
         pageCount,
         correspondentId,
         documentTypeId,

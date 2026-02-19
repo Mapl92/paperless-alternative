@@ -7,7 +7,19 @@ import { processDocument } from "@/lib/ai/process-document";
 import { prisma } from "@/lib/db/prisma";
 
 const SCAN_INTERVAL_MS = 30_000;
-const SUPPORTED_EXTENSIONS = [".pdf"];
+const SUPPORTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".webp", ".bmp", ".gif"];
+
+const EXT_TO_MIME: Record<string, string> = {
+  ".pdf":  "application/pdf",
+  ".png":  "image/png",
+  ".jpg":  "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".tiff": "image/tiff",
+  ".tif":  "image/tiff",
+  ".webp": "image/webp",
+  ".bmp":  "image/bmp",
+  ".gif":  "image/gif",
+};
 
 // #18: Use globalThis so the flag is shared across Next.js route bundles
 // (avoids two scan cycles running simultaneously if modules are instantiated twice)
@@ -46,6 +58,10 @@ async function scanConsumeDir() {
         console.log(`[consume] Processing: ${filename}`);
         const buffer = Buffer.from(await readFile(processingPath));
 
+        // Detect MIME type from extension
+        const ext = filename.toLowerCase().match(/\.[^.]+$/)?.[0] ?? ".pdf";
+        const mimeType = EXT_TO_MIME[ext] ?? "application/pdf";
+
         // Save original
         const { path, checksum, fileSize } = await saveOriginal(
           buffer,
@@ -72,7 +88,7 @@ async function scanConsumeDir() {
             originalFile: path,
             fileSize,
             checksum,
-            mimeType: "application/pdf",
+            mimeType,
           },
         });
 

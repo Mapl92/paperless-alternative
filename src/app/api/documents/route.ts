@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { saveOriginal } from "@/lib/files/storage";
-import { processDocument } from "@/lib/ai/process-document";
+import { processDocument, isImageMimeType } from "@/lib/ai/process-document";
 import { logAuditEvent } from "@/lib/audit";
+
+// All accepted MIME types (PDF + images)
+const ACCEPTED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/tiff",
+  "image/webp",
+  "image/bmp",
+  "image/gif",
+]);
 
 // #12: Max 100 MB per file, max 20 files per request
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -137,6 +149,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Validate MIME type
+      const detectedMime = file.type || "application/pdf";
+      if (!ACCEPTED_MIME_TYPES.has(detectedMime)) {
+        return NextResponse.json(
+          { error: `Dateiformat nicht unterstützt: ${detectedMime}. Erlaubt: PDF, PNG, JPG, TIFF, WebP, BMP` },
+          { status: 400 }
+        );
+      }
+
       const buffer = Buffer.from(await file.arrayBuffer());
 
       // Save original file
@@ -152,7 +173,7 @@ export async function POST(request: NextRequest) {
           originalFile: path,
           fileSize,
           checksum,
-          mimeType: file.type || "application/pdf",
+          mimeType: detectedMime,
         },
       });
 
@@ -162,7 +183,7 @@ export async function POST(request: NextRequest) {
         entityId: document.id,
         entityTitle: document.title,
         action: "upload",
-        newValues: { title: document.title, fileSize, mimeType: file.type || "application/pdf" },
+        newValues: { title: document.title, fileSize, mimeType: detectedMime },
         source: "ui",
       });
 

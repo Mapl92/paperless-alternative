@@ -2,8 +2,26 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { getEmailSettings } from "./settings";
 import { saveOriginal } from "@/lib/files/storage";
-import { processDocument } from "@/lib/ai/process-document";
+import { processDocument, isImageMimeType } from "@/lib/ai/process-document";
 import { prisma } from "@/lib/db/prisma";
+
+const ACCEPTED_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/tiff",
+  "image/webp",
+  "image/bmp",
+  "image/gif",
+]);
+
+function isAcceptedAttachment(contentType: string, filename?: string): boolean {
+  if (ACCEPTED_ATTACHMENT_TYPES.has(contentType.toLowerCase())) return true;
+  if (!filename) return false;
+  const ext = filename.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+  return [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".webp", ".bmp", ".gif"].includes(ext);
+}
 
 // Use globalThis to share state across Next.js route bundles
 const g = globalThis as unknown as {
@@ -154,29 +172,36 @@ async function pollEmails() {
             );
           }
 
-          // Extract PDF attachments
-          const pdfAttachments = allAttachments.filter(
-            (att) =>
-              att.contentType === "application/pdf" ||
-              att.filename?.toLowerCase().endsWith(".pdf")
+          // Extract PDF and image attachments
+          const acceptedAttachments = allAttachments.filter(
+            (att) => isAcceptedAttachment(att.contentType, att.filename ?? undefined)
           );
 
-          if (pdfAttachments.length === 0) {
-            console.log(`[email] No PDF attachments in "${subject}", skipping`);
-            // Track as processed even if no PDFs (avoid re-checking)
+          if (acceptedAttachments.length === 0) {
+            console.log(`[email] No supported attachments in "${subject}", skipping`);
+            // Track as processed even if no supported files (avoid re-checking)
             await addProcessedEmailId(messageId);
             continue;
           }
 
           console.log(
-            `[email] Processing "${subject}" - ${pdfAttachments.length} PDF(s)`
+            `[email] Processing "${subject}" - ${acceptedAttachments.length} attachment(s)`
           );
 
-          for (const attachment of pdfAttachments) {
+          for (const attachment of acceptedAttachments) {
             try {
               const buffer = Buffer.from(attachment.content);
+              const isPdf = attachment.contentType === "application/pdf" ||
+                attachment.filename?.toLowerCase().endsWith(".pdf");
+              const defaultExt = isPdf ? ".pdf" : ".png";
               const filename =
-                attachment.filename || `${subject.replace(/[^a-zA-Z0-9äöüÄÖÜß\s-]/g, "_")}.pdf`;
+                attachment.filename ||
+                `${subject.replace(/[^a-zA-Z0-9äöüÄÖÜß\s-]/g, "_")}${defaultExt}`;
+
+              // Determine MIME type (prefer content-type header, fallback to extension)
+              const mimeType = ACCEPTED_ATTACHMENT_TYPES.has(attachment.contentType.toLowerCase())
+                ? attachment.contentType.toLowerCase()
+                : (isImageMimeType(attachment.contentType) ? attachment.contentType : "application/pdf");
 
               // Save original file
               const { path, checksum, fileSize } = await saveOriginal(
@@ -198,8 +223,8 @@ async function pollEmails() {
 
               // Build title from subject + filename (if multiple attachments)
               const title =
-                pdfAttachments.length > 1
-                  ? `${subject} - ${filename.replace(/\.pdf$/i, "")}`
+                acceptedAttachments.length > 1
+                  ? `${subject} - ${filename.replace(/\.[^.]+$/, "")}`
                   : subject;
 
               // Create document
@@ -209,7 +234,7 @@ async function pollEmails() {
                   originalFile: path,
                   fileSize,
                   checksum,
-                  mimeType: "application/pdf",
+                  mimeType,
                 },
               });
 

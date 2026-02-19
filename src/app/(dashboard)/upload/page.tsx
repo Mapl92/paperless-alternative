@@ -18,15 +18,29 @@ export default function UploadPage() {
   const [dragOver, setDragOver] = useState(false);
   const router = useRouter();
 
+  const ACCEPTED_TYPES = new Set([
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/tiff",
+    "image/webp",
+    "image/bmp",
+    "image/gif",
+  ]);
+  const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".webp", ".bmp", ".gif"];
+
   const addFiles = useCallback((newFiles: FileList | File[]) => {
-    const pdfFiles = Array.from(newFiles).filter(
-      (f) => f.type === "application/pdf" || f.name.endsWith(".pdf")
+    const accepted = Array.from(newFiles).filter(
+      (f) =>
+        ACCEPTED_TYPES.has(f.type) ||
+        ACCEPTED_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext))
     );
     setFiles((prev) => [
       ...prev,
-      ...pdfFiles.map((file) => ({ file, status: "pending" as const })),
+      ...accepted.map((file) => ({ file, status: "pending" as const })),
     ]);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -92,17 +106,17 @@ export default function UploadPage() {
         <CardContent className="flex flex-col items-center justify-center py-12">
           <Upload className="h-10 w-10 text-muted-foreground mb-4" />
           <p className="text-lg font-medium mb-1">
-            PDF-Dateien hierher ziehen
+            PDF- und Bild-Dateien hierher ziehen
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            oder klicken zum Auswählen
+            PDF, PNG, JPG, TIFF, WebP, BMP — oder klicken zum Auswählen
           </p>
           <Button variant="outline" asChild>
             <label className="cursor-pointer">
               Dateien auswählen
               <input
                 type="file"
-                accept=".pdf,application/pdf"
+                accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.webp,.bmp,.gif,application/pdf,image/*"
                 multiple
                 className="hidden"
                 onChange={(e) => {
