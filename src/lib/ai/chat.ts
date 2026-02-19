@@ -1,3 +1,7 @@
+// WARNING: findRelevantDocuments() contains raw SQL queries against the "Document" table (pgvector).
+// Prisma does not type-check these queries. If the Document schema changes
+// (column renames, type changes), these queries MUST be updated manually.
+
 import { pool } from "@/lib/db/prisma";
 import { prisma } from "@/lib/db/prisma";
 import { generateQueryEmbedding, toVectorString } from "@/lib/ai/embeddings";

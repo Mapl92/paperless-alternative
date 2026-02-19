@@ -1,3 +1,7 @@
+// WARNING: This file contains raw SQL queries against the "Document" table (pgvector).
+// Prisma does not type-check these queries. If the Document schema changes
+// (column renames, type changes), these queries MUST be updated manually.
+
 import { NextRequest, NextResponse } from "next/server";
 import { pool, prisma } from "@/lib/db/prisma";
 

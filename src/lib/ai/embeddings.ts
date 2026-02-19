@@ -1,3 +1,7 @@
+// WARNING: storeEmbedding() contains a raw SQL query against the "Document" table (pgvector).
+// Prisma does not type-check this query. If the Document schema changes
+// (column renames, type changes), this query MUST be updated manually.
+
 import { pool } from "@/lib/db/prisma";
 import { logApiCall } from "@/lib/logging";
 

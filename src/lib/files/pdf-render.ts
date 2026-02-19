@@ -1,13 +1,14 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { writeFile, readFile, unlink, mkdtemp } from "fs/promises";
+import { readFile, readdir, mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * Render a single PDF page to PNG using pdftoppm
+ * Render a single PDF page to PNG using pdftoppm.
+ * Uses readdir to find the output file instead of guessing zero-padded filenames.
  */
 export async function renderPdfPage(
   pdfPath: string,
@@ -30,38 +31,22 @@ export async function renderPdfPage(
       outputPrefix,
     ]);
 
-    // pdftoppm creates page-{n}.png with zero-padded numbers
-    // Try common patterns
-    const patterns = [
-      join(tempDir, `page-${page}.png`),
-      join(tempDir, `page-${String(page).padStart(2, "0")}.png`),
-      join(tempDir, `page-${String(page).padStart(3, "0")}.png`),
-    ];
+    // pdftoppm creates files like page-1.png or page-01.png (zero-padded
+    // depending on total page count). Read all matching PNGs from the temp dir.
+    const files = await readdir(tempDir);
+    const pngFile = files.find(
+      (f) => f.startsWith("page-") && f.endsWith(".png")
+    );
 
-    for (const p of patterns) {
-      try {
-        const buf = await readFile(p);
-        await unlink(p);
-        return buf;
-      } catch {
-        // try next pattern
-      }
+    if (!pngFile) {
+      throw new Error(`Could not find rendered page ${page}`);
     }
 
-    throw new Error(`Could not find rendered page ${page}`);
+    return await readFile(join(tempDir, pngFile));
   } finally {
-    // Clean up temp dir
-    try {
-      const { readdir } = await import("fs/promises");
-      const files = await readdir(tempDir);
-      for (const f of files) {
-        await unlink(join(tempDir, f));
-      }
-      const { rmdir } = await import("fs/promises");
-      await rmdir(tempDir);
-    } catch {
-      // ignore cleanup errors
-    }
+    await rm(tempDir, { recursive: true, force: true }).catch((err) => {
+      console.error(`[pdf-render] Failed to clean up temp dir ${tempDir}:`, err);
+    });
   }
 }
 

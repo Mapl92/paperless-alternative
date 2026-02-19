@@ -48,17 +48,24 @@ export async function POST(request: NextRequest) {
     const passthrough = new PassThrough();
     archive.pipe(passthrough);
 
+    // Flag to stop the file-read loop when the client disconnects
+    let aborted = false;
+
     // Feed files into archive (run in background relative to stream setup)
     (async () => {
       for (const entry of entries) {
+        if (aborted) break;
         try {
           const buffer = await readFileFromStorage(entry.filePath);
+          if (aborted) break;
           archive.append(buffer, { name: entry.name });
         } catch (err) {
           console.error(`Failed to read file ${entry.filePath}:`, err);
         }
       }
-      await archive.finalize();
+      if (!aborted) {
+        await archive.finalize();
+      }
     })().catch((err) => {
       console.error("Archive finalization error:", err);
       archive.abort();
@@ -74,7 +81,9 @@ export async function POST(request: NextRequest) {
         passthrough.on("error", (err) => controller.error(err));
       },
       cancel() {
+        aborted = true;
         archive.abort();
+        passthrough.destroy();
       },
     });
 

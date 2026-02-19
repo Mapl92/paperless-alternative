@@ -1,3 +1,8 @@
+// WARNING: This file contains a raw SQL query against the "Document" table.
+// Prisma does not type-check these queries. If the Document schema changes
+// (column renames, type changes), these queries MUST be updated manually.
+// Affected: Monthly trend aggregation query.
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { pool } from "@/lib/db/prisma";

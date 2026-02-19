@@ -1,3 +1,8 @@
+// WARNING: This file contains raw SQL queries against the "Document" table (pgvector).
+// Prisma does not type-check these queries. If the Document schema changes
+// (column renames, type changes), these queries MUST be updated manually.
+// Affected: GET (embedding count), runBackfill() — pool.query with "embedding" column.
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { pool } from "@/lib/db/prisma";

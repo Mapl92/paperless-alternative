@@ -9,5 +9,8 @@ export async function register() {
 
     const { startShareCleanup } = await import("@/lib/r2/cleanup");
     startShareCleanup();
+
+    const { startTrashCleanup } = await import("@/lib/db/cleanup");
+    startTrashCleanup();
   }
 }
