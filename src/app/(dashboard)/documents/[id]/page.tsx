@@ -253,6 +253,23 @@ export default function DocumentDetailPage({
       .catch(() => {});
   }, [id]);
 
+  async function copyToClipboard(text: string) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // HTTP fallback
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
+  }
+
   async function handleCreateShareLink() {
     setSharing(true);
     try {
@@ -269,7 +286,7 @@ export default function DocumentDetailPage({
       setShareLinks((prev) => [link, ...prev]);
       setShareOpen(false);
       // Auto-copy
-      await navigator.clipboard.writeText(link.shareUrl).catch(() => {});
+      await copyToClipboard(link.shareUrl).catch(() => {});
       toast.success("Link erstellt & kopiert!");
     } catch (err) {
       toast.error((err as Error).message);
@@ -290,7 +307,7 @@ export default function DocumentDetailPage({
   }
 
   async function handleCopyShareLink(linkId: string, presignedUrl: string) {
-    await navigator.clipboard.writeText(presignedUrl).catch(() => {});
+    await copyToClipboard(presignedUrl).catch(() => {});
     setCopiedToken(linkId);
     setTimeout(() => setCopiedToken(null), 2000);
   }
