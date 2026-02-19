@@ -245,6 +245,7 @@ export default function DocumentDetailPage({
   const [shareExpiry, setShareExpiry] = useState("7d");
   const [sharing, setSharing] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [createdShareUrl, setCreatedShareUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/documents/${id}/share`)
@@ -284,10 +285,10 @@ export default function DocumentDetailPage({
       }
       const link = await res.json();
       setShareLinks((prev) => [link, ...prev]);
-      setShareOpen(false);
-      // Auto-copy
-      await copyToClipboard(link.shareUrl).catch(() => {});
-      toast.success("Link erstellt & kopiert!");
+      setCreatedShareUrl(link.shareUrl);
+      // Try clipboard (may fail over HTTP — URL shown in dialog as fallback)
+      copyToClipboard(link.shareUrl).catch(() => {});
+      toast.success("Link erstellt!");
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -1392,35 +1393,46 @@ export default function DocumentDetailPage({
                   const expired = new Date(link.expiresAt) < new Date();
                   const expiryStr = new Date(link.expiresAt).toLocaleDateString("de-DE");
                   return (
-                    <div key={link.id} className={`group flex items-center gap-2 rounded-md p-2 ${expired ? "opacity-60" : "hover:bg-muted/50"} transition-colors`}>
-                      <ExternalLink className={`h-3.5 w-3.5 shrink-0 ${expired ? "text-muted-foreground" : "text-primary"}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{link.fileName}</p>
-                        <p className={`text-[10px] ${expired ? "text-red-500" : "text-muted-foreground"}`}>
-                          {expired ? "Abgelaufen" : `Bis ${expiryStr}`} · {link.downloads} Downloads
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        {!expired && (
+                    <div key={link.id} className={`rounded-md p-2 space-y-1.5 ${expired ? "opacity-60" : "hover:bg-muted/50"} transition-colors group`}>
+                      <div className="flex items-center gap-2">
+                        <ExternalLink className={`h-3.5 w-3.5 shrink-0 ${expired ? "text-muted-foreground" : "text-primary"}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{link.fileName}</p>
+                          <p className={`text-[10px] ${expired ? "text-red-500" : "text-muted-foreground"}`}>
+                            {expired ? "Abgelaufen" : `Bis ${expiryStr}`} · {link.downloads} Downloads
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          {!expired && (
+                            <button
+                              onClick={() => handleCopyShareLink(link.id, link.presignedUrl)}
+                              className="p-1 rounded hover:bg-primary/10 hover:text-primary"
+                              title="Link kopieren"
+                            >
+                              {copiedToken === link.id
+                                ? <Check className="h-3 w-3 text-green-600" />
+                                : <Copy className="h-3 w-3 text-muted-foreground" />
+                              }
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleCopyShareLink(link.id, link.presignedUrl)}
-                            className="p-1 rounded hover:bg-primary/10 hover:text-primary"
-                            title="Link kopieren"
+                            onClick={() => handleRevokeShareLink(link.id)}
+                            className="p-1 rounded hover:bg-red-100 hover:text-red-700"
+                            title="Widerrufen"
                           >
-                            {copiedToken === link.id
-                              ? <Check className="h-3 w-3 text-green-600" />
-                              : <Copy className="h-3 w-3 text-muted-foreground" />
-                            }
+                            <X className="h-3 w-3 text-muted-foreground" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleRevokeShareLink(link.id)}
-                          className="p-1 rounded hover:bg-red-100 hover:text-red-700"
-                          title="Widerrufen"
-                        >
-                          <X className="h-3 w-3 text-muted-foreground" />
-                        </button>
+                        </div>
                       </div>
+                      {!expired && (
+                        <input
+                          readOnly
+                          value={link.presignedUrl}
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                          className="w-full rounded border bg-background px-2 py-1 text-[10px] font-mono text-muted-foreground cursor-text focus:outline-none focus:ring-1 focus:ring-primary"
+                          title="Anklicken zum Auswählen"
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -1679,7 +1691,7 @@ export default function DocumentDetailPage({
       </Dialog>
 
       {/* Share Dialog */}
-      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+      <Dialog open={shareOpen} onOpenChange={(open) => { setShareOpen(open); if (!open) setCreatedShareUrl(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1690,44 +1702,82 @@ export default function DocumentDetailPage({
               Das Dokument wird auf Cloudflare R2 hochgeladen. Der Link ist für Dritte ohne Login zugänglich.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="text-sm font-medium">Link gültig für</label>
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                {[
-                  { value: "1h",  label: "1 Stunde" },
-                  { value: "24h", label: "24 Std." },
-                  { value: "3d",  label: "3 Tage" },
-                  { value: "7d",  label: "7 Tage" },
-                ].map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setShareExpiry(opt.value)}
-                    className={`rounded-md border px-3 py-2 text-sm transition-colors ${
-                      shareExpiry === opt.value
-                        ? "border-primary bg-primary/10 text-primary font-medium"
-                        : "border-muted-foreground/20 hover:border-primary/40 text-muted-foreground"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+          {createdShareUrl ? (
+            <>
+              <div className="space-y-3 py-2">
+                <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 p-3">
+                  <Check className="h-4 w-4 text-green-600 shrink-0" />
+                  <p className="text-sm text-green-800 font-medium">Link erfolgreich erstellt!</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Freigabe-Link (anklicken zum Auswählen)</label>
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={createdShareUrl}
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                      className="flex-1 rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono text-foreground cursor-text focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        copyToClipboard(createdShareUrl).catch(() => {});
+                        setCopiedToken("dialog");
+                        setTimeout(() => setCopiedToken(null), 2000);
+                      }}
+                    >
+                      {copiedToken === "dialog" ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
-              <p>• Der Link funktioniert weltweit ohne Login</p>
-              <p>• Download läuft direkt über Cloudflare (nicht den Pi)</p>
-              <p>• Max. 7 Tage Gültigkeit (R2-Limit)</p>
-              <p>• Link kann jederzeit widerrufen werden</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShareOpen(false)}>Abbrechen</Button>
-            <Button onClick={handleCreateShareLink} disabled={sharing}>
-              {sharing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Share2 className="mr-2 h-4 w-4" />}
-              {sharing ? "Wird hochgeladen..." : "Link erstellen & kopieren"}
-            </Button>
-          </DialogFooter>
+              <DialogFooter>
+                <Button onClick={() => { setShareOpen(false); setCreatedShareUrl(null); }}>Fertig</Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <div className="space-y-4 py-2">
+                <div>
+                  <label className="text-sm font-medium">Link gültig für</label>
+                  <div className="grid grid-cols-4 gap-2 mt-2">
+                    {[
+                      { value: "1h",  label: "1 Stunde" },
+                      { value: "24h", label: "24 Std." },
+                      { value: "3d",  label: "3 Tage" },
+                      { value: "7d",  label: "7 Tage" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setShareExpiry(opt.value)}
+                        className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                          shareExpiry === opt.value
+                            ? "border-primary bg-primary/10 text-primary font-medium"
+                            : "border-muted-foreground/20 hover:border-primary/40 text-muted-foreground"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+                  <p>• Der Link funktioniert weltweit ohne Login</p>
+                  <p>• Download läuft direkt über Cloudflare (nicht den Pi)</p>
+                  <p>• Max. 7 Tage Gültigkeit (R2-Limit)</p>
+                  <p>• Link kann jederzeit widerrufen werden</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShareOpen(false)}>Abbrechen</Button>
+                <Button onClick={handleCreateShareLink} disabled={sharing}>
+                  {sharing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Share2 className="mr-2 h-4 w-4" />}
+                  {sharing ? "Wird hochgeladen..." : "Link erstellen"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
