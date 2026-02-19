@@ -6,5 +6,8 @@ export async function register() {
 
     const { startEmailWatcher } = await import("@/lib/email/watcher");
     startEmailWatcher();
+
+    const { startShareCleanup } = await import("@/lib/r2/cleanup");
+    startShareCleanup();
   }
 }
