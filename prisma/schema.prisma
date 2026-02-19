@@ -36,6 +36,7 @@ model Document {
   notes         Note[]
   todos         Todo[]
   reminders     Reminder[]
+  shareLinks    ShareLink[]
 
   @@index([correspondentId])
   @@index([documentTypeId])
@@ -220,6 +221,23 @@ model AuditLog {
   @@index([timestamp(sort: Desc)])
   @@index([entityType, entityId])
   @@index([action])
+}
+
+model ShareLink {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  documentId String
+  r2Key      String
+  fileName   String
+  expiresAt  DateTime
+  downloads  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([documentId])
+  @@index([expiresAt])
 }
 
 model Reminder {

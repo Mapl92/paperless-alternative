@@ -27,9 +27,12 @@ import {
   Clock,
   CheckSquare,
   ChevronsUpDown,
+  Copy,
   Download,
+  ExternalLink,
   FileText,
   FileUp,
+  Link2,
   Loader2,
   MessageSquarePlus,
   Pencil,
@@ -39,6 +42,7 @@ import {
   RotateCcw,
   Save,
   Scissors,
+  Share2,
   Sparkles,
   Square,
   Tag,
@@ -225,6 +229,71 @@ export default function DocumentDetailPage({
   const [newReminderNote, setNewReminderNote] = useState("");
   const [newReminderAt, setNewReminderAt] = useState("");
   const [savingReminder, setSavingReminder] = useState(false);
+
+  // Share links state
+  interface ShareLinkItem {
+    id: string;
+    token: string;
+    fileName: string;
+    expiresAt: string;
+    downloads: number;
+    createdAt: string;
+  }
+  const [shareLinks, setShareLinks] = useState<ShareLinkItem[]>([]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareExpiry, setShareExpiry] = useState("7d");
+  const [sharing, setSharing] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/documents/${id}/share`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setShareLinks(data); })
+      .catch(() => {});
+  }, [id]);
+
+  async function handleCreateShareLink() {
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/documents/${id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiry: shareExpiry }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Fehler");
+      }
+      const link = await res.json();
+      setShareLinks((prev) => [link, ...prev]);
+      setShareOpen(false);
+      // Auto-copy
+      await navigator.clipboard.writeText(link.shareUrl).catch(() => {});
+      toast.success("Link erstellt & kopiert!");
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function handleRevokeShareLink(linkId: string) {
+    setShareLinks((prev) => prev.filter((l) => l.id !== linkId));
+    try {
+      const res = await fetch(`/api/documents/${id}/share?linkId=${linkId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast.success("Freigabe widerrufen");
+    } catch {
+      toast.error("Widerrufen fehlgeschlagen");
+    }
+  }
+
+  async function handleCopyShareLink(token: string) {
+    const url = `${window.location.origin}/api/share/${token}`;
+    await navigator.clipboard.writeText(url).catch(() => {});
+    setCopiedToken(token);
+    setTimeout(() => setCopiedToken(null), 2000);
+  }
 
   // Activity log state
   interface AuditLogEntry {
@@ -630,6 +699,10 @@ export default function DocumentDetailPage({
               <Download className="mr-2 h-4 w-4" />
               Download
             </a>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShareOpen(true)}>
+            <Share2 className="mr-2 h-4 w-4" />
+            Teilen
           </Button>
           <Button
             variant="outline"
@@ -1283,6 +1356,61 @@ export default function DocumentDetailPage({
             </Card>
           )}
 
+          {/* Share Links */}
+          {shareLinks.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                    <Link2 className="h-3.5 w-3.5" />
+                    Freigabe-Links
+                  </CardTitle>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShareOpen(true)} title="Neuen Link erstellen">
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {shareLinks.map((link) => {
+                  const expired = new Date(link.expiresAt) < new Date();
+                  const expiryStr = new Date(link.expiresAt).toLocaleDateString("de-DE");
+                  return (
+                    <div key={link.id} className={`group flex items-center gap-2 rounded-md p-2 ${expired ? "opacity-60" : "hover:bg-muted/50"} transition-colors`}>
+                      <ExternalLink className={`h-3.5 w-3.5 shrink-0 ${expired ? "text-muted-foreground" : "text-primary"}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{link.fileName}</p>
+                        <p className={`text-[10px] ${expired ? "text-red-500" : "text-muted-foreground"}`}>
+                          {expired ? "Abgelaufen" : `Bis ${expiryStr}`} · {link.downloads} Downloads
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        {!expired && (
+                          <button
+                            onClick={() => handleCopyShareLink(link.token)}
+                            className="p-1 rounded hover:bg-primary/10 hover:text-primary"
+                            title="Link kopieren"
+                          >
+                            {copiedToken === link.token
+                              ? <Check className="h-3 w-3 text-green-600" />
+                              : <Copy className="h-3 w-3 text-muted-foreground" />
+                            }
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRevokeShareLink(link.id)}
+                          className="p-1 rounded hover:bg-red-100 hover:text-red-700"
+                          title="Widerrufen"
+                        >
+                          <X className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Reminders */}
           <Card>
             <CardHeader className="pb-2">
@@ -1528,6 +1656,58 @@ export default function DocumentDetailPage({
                 <Scissors className="mr-2 h-4 w-4" />
               )}
               Aufteilen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5" />
+              Dokument teilen
+            </DialogTitle>
+            <DialogDescription>
+              Das Dokument wird auf Cloudflare R2 hochgeladen. Der Link ist für Dritte ohne Login zugänglich.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium">Link gültig für</label>
+              <div className="grid grid-cols-4 gap-2 mt-2">
+                {[
+                  { value: "1h",  label: "1 Stunde" },
+                  { value: "24h", label: "24 Stunden" },
+                  { value: "7d",  label: "7 Tage" },
+                  { value: "30d", label: "30 Tage" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setShareExpiry(opt.value)}
+                    className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                      shareExpiry === opt.value
+                        ? "border-primary bg-primary/10 text-primary font-medium"
+                        : "border-muted-foreground/20 hover:border-primary/40 text-muted-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+              <p>• Der Link funktioniert ohne Login</p>
+              <p>• Datei wird in Cloudflare R2 gespeichert</p>
+              <p>• Link kann jederzeit widerrufen werden</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareOpen(false)}>Abbrechen</Button>
+            <Button onClick={handleCreateShareLink} disabled={sharing}>
+              {sharing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Share2 className="mr-2 h-4 w-4" />}
+              {sharing ? "Wird hochgeladen..." : "Link erstellen & kopieren"}
             </Button>
           </DialogFooter>
         </DialogContent>

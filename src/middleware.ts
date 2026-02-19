@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/sign", "/api/signatures/token", "/api/branding", "/api/settings/branding"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/sign", "/api/signatures/token", "/api/branding", "/api/settings/branding", "/api/share/"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
