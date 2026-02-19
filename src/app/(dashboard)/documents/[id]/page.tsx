@@ -36,6 +36,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Scissors,
   Sparkles,
   Square,
   Tag,
@@ -44,6 +45,14 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import SigningOverlay from "@/components/signatures/signing-overlay";
 import { toast } from "sonner";
 import { getPriority, PRIORITIES } from "@/lib/constants/todo";
@@ -144,6 +153,61 @@ export default function DocumentDetailPage({
   const [savingTodo, setSavingTodo] = useState(false);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const parseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Split state
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitRanges, setSplitRanges] = useState(""); // e.g. "1-3, 4-6"
+  const [splitting, setSplitting] = useState(false);
+
+  async function handleSplit() {
+    if (!doc) return;
+    const totalPages = doc.pageCount ?? 1;
+
+    // Parse range string like "1-3, 4, 6-8"
+    const parts = splitRanges.split(",").map((s) => s.trim()).filter(Boolean);
+    const ranges: Array<{ from: number; to: number }> = [];
+
+    for (const part of parts) {
+      const match = part.match(/^(\d+)(?:-(\d+))?$/);
+      if (!match) {
+        toast.error(`Ungültiger Bereich: "${part}"`);
+        return;
+      }
+      const from = parseInt(match[1]);
+      const to = match[2] ? parseInt(match[2]) : from;
+      if (from < 1 || to > totalPages || from > to) {
+        toast.error(`Bereich ${from}–${to} ist ungültig (Dokument hat ${totalPages} Seiten)`);
+        return;
+      }
+      ranges.push({ from, to });
+    }
+
+    if (ranges.length === 0) {
+      toast.error("Keine Seitenbereiche angegeben");
+      return;
+    }
+
+    setSplitting(true);
+    try {
+      const res = await fetch(`/api/documents/${id}/split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ranges }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Aufteilen fehlgeschlagen");
+      }
+      const data = await res.json();
+      setSplitOpen(false);
+      setSplitRanges("");
+      toast.success(`${data.documents.length} neue Dokumente erstellt — KI verarbeitet im Hintergrund`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSplitting(false);
+    }
+  }
 
   // Activity log state
   interface AuditLogEntry {
@@ -498,6 +562,16 @@ export default function DocumentDetailPage({
             <PenLine className="mr-2 h-4 w-4" />
             Unterschreiben
           </Button>
+          {doc.pageCount && doc.pageCount > 1 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setSplitRanges(""); setSplitOpen(true); }}
+            >
+              <Scissors className="mr-2 h-4 w-4" />
+              Aufteilen
+            </Button>
+          )}
           {doc.content && (
             <Button
               variant={showFulltext ? "secondary" : "outline"}
@@ -1207,6 +1281,56 @@ export default function DocumentDetailPage({
           </Card>
         </div>
       </div>
+
+      {/* Split Dialog */}
+      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Scissors className="h-5 w-5" />
+              PDF aufteilen
+            </DialogTitle>
+            <DialogDescription>
+              Dokument hat {doc.pageCount} Seite{doc.pageCount === 1 ? "" : "n"}.
+              Gib Seitenbereiche kommagetrennt ein — z.B. <code className="bg-muted px-1 rounded text-xs">1-3, 4-6</code> oder <code className="bg-muted px-1 rounded text-xs">1, 2-5, 6</code>.
+              Für jedes Segment wird ein neues Dokument erstellt und per KI verarbeitet.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-sm font-medium">Seitenbereiche</label>
+              <input
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder={`z.B. 1-${Math.ceil((doc.pageCount ?? 2) / 2)}, ${Math.ceil((doc.pageCount ?? 2) / 2) + 1}-${doc.pageCount ?? 2}`}
+                value={splitRanges}
+                onChange={(e) => setSplitRanges(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !splitting && handleSplit()}
+                autoFocus
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tipp: Um alle Seiten einzeln aufzuteilen, gib{" "}
+              {doc.pageCount && doc.pageCount <= 20
+                ? Array.from({ length: doc.pageCount }, (_, i) => i + 1).join(", ")
+                : "1, 2, 3, ..."}{" "}
+              ein.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitOpen(false)} disabled={splitting}>
+              Abbrechen
+            </Button>
+            <Button onClick={handleSplit} disabled={splitting || !splitRanges.trim()}>
+              {splitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Scissors className="mr-2 h-4 w-4" />
+              )}
+              Aufteilen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Signing Overlay */}
       <SigningOverlay

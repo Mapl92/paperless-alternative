@@ -1,16 +1,25 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tags, Trash2, User, FileType, X, Loader2, Search, Download } from "lucide-react";
+import { Tags, Trash2, User, FileType, X, Loader2, Search, Download, Merge } from "lucide-react";
 import { toast } from "sonner";
 
 interface Tag {
@@ -42,10 +51,52 @@ export function BulkActionsBar({
   onClearSelection,
   onRefresh,
 }: BulkActionsBarProps) {
+  const router = useRouter();
   const [tags, setTags] = useState<Tag[]>([]);
   const [correspondents, setCorrespondents] = useState<Correspondent[]>([]);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Merge state
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTitle, setMergeTitle] = useState("");
+  const [mergeTrash, setMergeTrash] = useState(false);
+  const [merging, setMerging] = useState(false);
+
+  async function handleMerge() {
+    if (!mergeTitle.trim()) {
+      toast.error("Bitte einen Titel eingeben");
+      return;
+    }
+    setMerging(true);
+    try {
+      const res = await fetch("/api/documents/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentIds: Array.from(selectedIds),
+          title: mergeTitle.trim(),
+          trashOriginals: mergeTrash,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Zusammenführen fehlgeschlagen");
+      }
+      const data = await res.json();
+      setMergeOpen(false);
+      setMergeTitle("");
+      setMergeTrash(false);
+      onClearSelection();
+      onRefresh();
+      toast.success("Dokumente zusammengeführt — KI verarbeitet im Hintergrund");
+      router.push(`/documents/${data.document.id}`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setMerging(false);
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -123,6 +174,56 @@ export function BulkActionsBar({
   if (selectedCount === 0) return null;
 
   return (
+    <>
+    {/* Merge Dialog */}
+    <Dialog open={mergeOpen} onOpenChange={setMergeOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Merge className="h-5 w-5" />
+            PDFs zusammenführen
+          </DialogTitle>
+          <DialogDescription>
+            {selectedCount} Dokumente werden in der Reihenfolge der Auswahl zu einer PDF zusammengeführt.
+            Das neue Dokument wird automatisch per KI verarbeitet.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <label className="text-sm font-medium">Titel des neuen Dokuments</label>
+            <Input
+              className="mt-1"
+              placeholder="z.B. Zusammengeführtes Dokument"
+              value={mergeTitle}
+              onChange={(e) => setMergeTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !merging && handleMerge()}
+              autoFocus
+            />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox
+              checked={mergeTrash}
+              onCheckedChange={(v) => setMergeTrash(Boolean(v))}
+            />
+            <span className="text-sm">Originaldokumente danach in den Papierkorb verschieben</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setMergeOpen(false)} disabled={merging}>
+            Abbrechen
+          </Button>
+          <Button onClick={handleMerge} disabled={merging || !mergeTitle.trim()}>
+            {merging ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Merge className="mr-2 h-4 w-4" />
+            )}
+            Zusammenführen
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 p-3 shadow-lg">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -186,6 +287,23 @@ export function BulkActionsBar({
             }}
           />
 
+          {/* Merge (≥2 docs) */}
+          {selectedCount >= 2 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setMergeTitle("");
+                setMergeTrash(false);
+                setMergeOpen(true);
+              }}
+              disabled={loading}
+            >
+              <Merge className="mr-1 h-4 w-4" />
+              Zusammenführen
+            </Button>
+          )}
+
           {/* ZIP Export */}
           <Button
             variant="outline"
@@ -218,6 +336,7 @@ export function BulkActionsBar({
         </div>
       </div>
     </div>
+    </>
   );
 }
 
