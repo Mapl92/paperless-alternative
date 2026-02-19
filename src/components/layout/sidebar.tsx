@@ -192,7 +192,7 @@ function SidebarContent() {
               {views.map((view) => (
                 <Link
                   key={view.id}
-                  href={`/?view=${view.id}`}
+                  href={`/documents?view=${view.id}`}
                   className={cn(
                     "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                     activeViewId === view.id
