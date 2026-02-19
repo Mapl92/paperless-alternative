@@ -254,23 +254,6 @@ export default function DocumentDetailPage({
       .catch(() => {});
   }, [id]);
 
-  async function copyToClipboard(text: string) {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      // HTTP fallback
-      const el = document.createElement("textarea");
-      el.value = text;
-      el.style.position = "fixed";
-      el.style.opacity = "0";
-      document.body.appendChild(el);
-      el.focus();
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-    }
-  }
-
   async function handleCreateShareLink() {
     setSharing(true);
     try {
@@ -286,8 +269,6 @@ export default function DocumentDetailPage({
       const link = await res.json();
       setShareLinks((prev) => [link, ...prev]);
       setCreatedShareUrl(link.shareUrl);
-      // Try clipboard (may fail over HTTP — URL shown in dialog as fallback)
-      copyToClipboard(link.shareUrl).catch(() => {});
       toast.success("Link erstellt!");
     } catch (err) {
       toast.error((err as Error).message);
@@ -305,12 +286,6 @@ export default function DocumentDetailPage({
     } catch {
       toast.error("Widerrufen fehlgeschlagen");
     }
-  }
-
-  async function handleCopyShareLink(linkId: string, presignedUrl: string) {
-    await copyToClipboard(presignedUrl).catch(() => {});
-    setCopiedToken(linkId);
-    setTimeout(() => setCopiedToken(null), 2000);
   }
 
   // Activity log state
@@ -1405,9 +1380,14 @@ export default function DocumentDetailPage({
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                           {!expired && (
                             <button
-                              onClick={() => handleCopyShareLink(link.id, link.presignedUrl)}
+                              onClick={() => {
+                                const input = document.getElementById(`share-url-${link.id}`) as HTMLInputElement | null;
+                                if (input) { input.focus(); input.select(); }
+                                setCopiedToken(link.id);
+                                setTimeout(() => setCopiedToken(null), 2000);
+                              }}
                               className="p-1 rounded hover:bg-primary/10 hover:text-primary"
-                              title="Link kopieren"
+                              title="Link auswählen"
                             >
                               {copiedToken === link.id
                                 ? <Check className="h-3 w-3 text-green-600" />
@@ -1426,6 +1406,7 @@ export default function DocumentDetailPage({
                       </div>
                       {!expired && (
                         <input
+                          id={`share-url-${link.id}`}
                           readOnly
                           value={link.presignedUrl}
                           onClick={(e) => (e.target as HTMLInputElement).select()}
@@ -1713,6 +1694,7 @@ export default function DocumentDetailPage({
                   <label className="text-xs text-muted-foreground mb-1 block">Freigabe-Link (anklicken zum Auswählen)</label>
                   <div className="flex gap-2">
                     <input
+                      id="share-url-dialog"
                       readOnly
                       value={createdShareUrl}
                       onClick={(e) => (e.target as HTMLInputElement).select()}
@@ -1721,8 +1703,10 @@ export default function DocumentDetailPage({
                     <Button
                       size="sm"
                       variant="outline"
+                      title="Text auswählen"
                       onClick={() => {
-                        copyToClipboard(createdShareUrl).catch(() => {});
+                        const input = document.getElementById("share-url-dialog") as HTMLInputElement | null;
+                        if (input) { input.focus(); input.select(); }
                         setCopiedToken("dialog");
                         setTimeout(() => setCopiedToken(null), 2000);
                       }}
