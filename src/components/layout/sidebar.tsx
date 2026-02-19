@@ -12,7 +12,7 @@ import {
   Settings,
   LogOut,
   LayoutDashboard,
-  Bookmark,
+  FolderOpen,
   X,
   MessageCircle,
   ScanSearch,
@@ -27,6 +27,7 @@ import { useBranding } from "@/lib/hooks/use-branding";
 interface SavedView {
   id: string;
   name: string;
+  count?: number;
 }
 
 const navItems = [
@@ -180,12 +181,12 @@ function SidebarContent() {
           </Link>
         </nav>
 
-        {/* Saved Views */}
+        {/* Saved Views / Smart Folders */}
         {views.length > 0 && (
           <>
             <Separator className="my-3" />
             <p className="mb-2 px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Ansichten
+              Ordner
             </p>
             <nav className="space-y-0.5">
               {views.map((view) => (
@@ -199,8 +200,13 @@ function SidebarContent() {
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
-                  <Bookmark className="h-4 w-4 shrink-0" />
+                  <FolderOpen className="h-4 w-4 shrink-0" />
                   <span className="truncate flex-1">{view.name}</span>
+                  {view.count !== undefined && view.count > 0 && (
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium group-hover:hidden">
+                      {view.count}
+                    </span>
+                  )}
                   <button
                     onClick={(e) => handleDeleteView(e, view.id)}
                     className="hidden group-hover:flex h-4 w-4 items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive shrink-0"
