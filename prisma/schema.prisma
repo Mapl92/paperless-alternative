@@ -37,6 +37,8 @@ model Document {
   todos         Todo[]
   reminders     Reminder[]
   shareLinks    ShareLink[]
+  relationsAsSource DocumentRelation[] @relation("SourceDocument")
+  relationsAsTarget DocumentRelation[] @relation("TargetDocument")
 
   @@index([correspondentId])
   @@index([documentTypeId])
@@ -255,4 +257,19 @@ model Reminder {
 
   @@index([dismissed, remindAt])
   @@index([documentId])
+}
+
+model DocumentRelation {
+  id                String   @id @default(uuid())
+  sourceDocumentId  String
+  targetDocumentId  String
+  type              String   @default("related") // related | supersedes | attachment | reply
+  createdAt         DateTime @default(now())
+
+  sourceDocument Document @relation("SourceDocument", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  targetDocument Document @relation("TargetDocument", fields: [targetDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceDocumentId, targetDocumentId])
+  @@index([sourceDocumentId])
+  @@index([targetDocumentId])
 }

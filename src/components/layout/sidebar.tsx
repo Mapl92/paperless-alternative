@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useBranding } from "@/lib/hooks/use-branding";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface SavedView {
   id: string;
@@ -235,17 +236,18 @@ function SidebarContent() {
         </Link>
       </ScrollArea>
 
-      {/* Logout */}
-      <div className="border-t p-3">
+      {/* Footer */}
+      <div className="border-t p-3 flex items-center gap-1">
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-muted-foreground"
+          className="flex-1 justify-start text-muted-foreground"
           onClick={handleLogout}
         >
           <LogOut className="mr-2 h-4 w-4" />
           Abmelden
         </Button>
+        <ThemeToggle />
       </div>
     </aside>
   );

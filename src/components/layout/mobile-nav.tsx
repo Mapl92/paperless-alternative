@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { CheckSquare, FileText, LayoutDashboard, Upload, Search, Settings } from "lucide-react";
+import { CheckSquare, FileText, LayoutDashboard, Moon, Sun, Upload, Search, Settings } from "lucide-react";
+import { useTheme } from "next-themes";
 
 const items = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -16,6 +17,7 @@ const items = [
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-card md:hidden">
@@ -35,6 +37,13 @@ export function MobileNav() {
             {item.label}
           </Link>
         ))}
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="flex flex-col items-center gap-1 px-3 py-1 text-xs text-muted-foreground transition-colors"
+        >
+          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          Theme
+        </button>
       </div>
     </nav>
   );

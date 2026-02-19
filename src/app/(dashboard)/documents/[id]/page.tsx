@@ -47,6 +47,7 @@ import {
   Square,
   Tag,
   Trash2,
+  Unlink,
   User,
   X,
   Zap,
@@ -246,6 +247,115 @@ export default function DocumentDetailPage({
   const [sharing, setSharing] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [createdShareUrl, setCreatedShareUrl] = useState<string | null>(null);
+
+  // Relations state
+  interface RelationItem {
+    id: string;
+    type: string;
+    document: {
+      id: string;
+      title: string;
+      thumbnailFile: string | null;
+      correspondent: { name: string } | null;
+      documentType: { name: string } | null;
+    };
+  }
+  interface SuggestedDoc {
+    id: string;
+    title: string;
+    thumbnailFile: string | null;
+    correspondent: { name: string } | null;
+    documentType: { name: string } | null;
+    similarity: number;
+  }
+  const [relations, setRelations] = useState<RelationItem[]>([]);
+  const [relSearchOpen, setRelSearchOpen] = useState(false);
+  const [relSearchQuery, setRelSearchQuery] = useState("");
+  const [relSearchResults, setRelSearchResults] = useState<Array<{ id: string; title: string }>>([]);
+  const [relSearching, setRelSearching] = useState(false);
+  const relSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [suggestions, setSuggestions] = useState<SuggestedDoc[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
+  const [addingRelation, setAddingRelation] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/documents/${id}/relations`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setRelations(data); })
+      .catch(() => {});
+  }, [id]);
+
+  function handleRelSearch(q: string) {
+    setRelSearchQuery(q);
+    if (relSearchTimer.current) clearTimeout(relSearchTimer.current);
+    if (q.length < 2) { setRelSearchResults([]); return; }
+    setRelSearching(true);
+    relSearchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/documents?q=${encodeURIComponent(q)}&limit=8`);
+        if (res.ok) {
+          const data = await res.json();
+          const docs = (data.documents ?? data).filter(
+            (d: { id: string }) => d.id !== id && !relations.some((r) => r.document.id === d.id)
+          );
+          setRelSearchResults(docs);
+        }
+      } catch { /* ignore */ }
+      finally { setRelSearching(false); }
+    }, 300);
+  }
+
+  async function handleAddRelation(targetDocumentId: string, type = "related") {
+    setAddingRelation(targetDocumentId);
+    try {
+      const res = await fetch(`/api/documents/${id}/relations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetDocumentId, type }),
+      });
+      if (res.ok) {
+        const rel = await res.json();
+        setRelations((prev) => [rel, ...prev]);
+        setSuggestions((prev) => prev.filter((s) => s.id !== targetDocumentId));
+        setRelSearchOpen(false);
+        setRelSearchQuery("");
+        setRelSearchResults([]);
+        toast.success("Verknüpfung erstellt");
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Fehler");
+      }
+    } catch {
+      toast.error("Verknüpfung fehlgeschlagen");
+    } finally {
+      setAddingRelation(null);
+    }
+  }
+
+  async function handleRemoveRelation(relationId: string) {
+    const prev = relations;
+    setRelations((r) => r.filter((rel) => rel.id !== relationId));
+    try {
+      const res = await fetch(`/api/documents/${id}/relations?relationId=${relationId}`, { method: "DELETE" });
+      if (!res.ok) { setRelations(prev); toast.error("Entfernen fehlgeschlagen"); }
+      else toast.success("Verknüpfung entfernt");
+    } catch { setRelations(prev); }
+  }
+
+  async function loadSuggestions() {
+    if (suggestionsLoaded) return;
+    setSuggestionsLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${id}/relations/suggest`);
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestions(data);
+        setSuggestionsLoaded(true);
+      }
+    } catch { /* ignore */ }
+    finally { setSuggestionsLoading(false); }
+  }
 
   useEffect(() => {
     fetch(`/api/documents/${id}/share`)
@@ -1348,6 +1458,178 @@ export default function DocumentDetailPage({
               </CardContent>
             </Card>
           )}
+
+          {/* Linked Documents */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Link2 className="h-3.5 w-3.5" />
+                  Verknüpfte Dokumente
+                </CardTitle>
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={loadSuggestions}
+                    disabled={suggestionsLoading}
+                    title="KI-Vorschläge laden"
+                  >
+                    {suggestionsLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                  </Button>
+                  <Popover open={relSearchOpen} onOpenChange={setRelSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Dokument verknüpfen">
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-72" align="end">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Dokument suchen..."
+                          value={relSearchQuery}
+                          onValueChange={handleRelSearch}
+                        />
+                        <CommandList>
+                          {relSearching && (
+                            <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Suche...
+                            </div>
+                          )}
+                          {!relSearching && relSearchQuery.length >= 2 && relSearchResults.length === 0 && (
+                            <CommandEmpty>Keine Ergebnisse</CommandEmpty>
+                          )}
+                          {relSearchResults.length > 0 && (
+                            <CommandGroup>
+                              {relSearchResults.map((d: { id: string; title: string }) => (
+                                <CommandItem
+                                  key={d.id}
+                                  onSelect={() => handleAddRelation(d.id)}
+                                  disabled={addingRelation === d.id}
+                                >
+                                  <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="truncate flex-1">{d.title}</span>
+                                  {addingRelation === d.id && (
+                                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {/* Existing relations */}
+              {relations.length === 0 && !suggestionsLoaded ? (
+                <p className="text-xs text-muted-foreground">Keine Verknüpfungen</p>
+              ) : null}
+              {relations.map((rel) => (
+                <div
+                  key={rel.id}
+                  className="group flex items-center gap-2 rounded-md p-2 hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/documents/${rel.document.id}`)}
+                >
+                  {rel.document.thumbnailFile ? (
+                    <img
+                      src={`/api/documents/${rel.document.id}/file?type=thumbnail`}
+                      alt=""
+                      className="h-8 w-8 rounded object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{rel.document.title}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {rel.document.documentType && (
+                        <span className="text-[10px] text-muted-foreground">{rel.document.documentType.name}</span>
+                      )}
+                      {rel.document.correspondent && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {rel.document.documentType ? " · " : ""}{rel.document.correspondent.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveRelation(rel.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-100 hover:text-red-700 shrink-0"
+                    title="Verknüpfung entfernen"
+                  >
+                    <X className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                </div>
+              ))}
+
+              {/* AI Suggestions */}
+              {suggestionsLoaded && suggestions.length > 0 && (
+                <>
+                  <Separator className="my-2" />
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+                    KI-Vorschläge
+                  </p>
+                  {suggestions.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center gap-2 rounded-md p-2 hover:bg-muted/50 transition-colors"
+                    >
+                      {s.thumbnailFile ? (
+                        <img
+                          src={`/api/documents/${s.id}/file?type=thumbnail`}
+                          alt=""
+                          className="h-8 w-8 rounded object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{s.title}</p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {s.similarity}% ähnlich
+                          {s.correspondent && ` · ${s.correspondent.name}`}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => handleAddRelation(s.id)}
+                        disabled={addingRelation === s.id}
+                        title="Verknüpfen"
+                      >
+                        {addingRelation === s.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Plus className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </>
+              )}
+              {suggestionsLoaded && suggestions.length === 0 && relations.length > 0 && (
+                <p className="text-[10px] text-muted-foreground mt-1">Keine weiteren Vorschläge</p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Share Links */}
           {shareLinks.length > 0 && (
