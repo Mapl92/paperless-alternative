@@ -127,8 +127,8 @@ async function pollEmails() {
     const lock = await client.getMailboxLock(settings.folder);
 
     try {
-      // Search for unseen messages
-      const searchResult = await client.search({ seen: false });
+      // Search for unseen messages (uid: true ensures we get UIDs, not sequence numbers)
+      const searchResult = await client.search({ seen: false }, { uid: true });
 
       if (!searchResult || searchResult.length === 0) {
         console.log("[email] No unread emails found");
