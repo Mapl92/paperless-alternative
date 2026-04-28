@@ -181,6 +181,9 @@ export default function ContractsPage() {
   const [contractForm, setContractForm] = useState(emptyForm);
   const [savingContract, setSavingContract] = useState(false);
   const [newCost, setNewCost] = useState({ amount: "", currency: "EUR", billingInterval: "monthly", validFrom: "", note: "" });
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualForm, setManualForm] = useState(emptyForm);
+  const [creatingManual, setCreatingManual] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -368,6 +371,34 @@ export default function ContractsPage() {
     }
   }
 
+  function openManual() {
+    setManualForm(emptyForm());
+    setManualOpen(true);
+  }
+
+  async function createManualContract() {
+    if (!manualForm.name.trim()) return;
+    setCreatingManual(true);
+    try {
+      const res = await fetch("/api/contracts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(manualForm),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Vertrag konnte nicht erstellt werden");
+      }
+      toast.success("Vertrag erstellt");
+      setManualOpen(false);
+      await loadAll();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setCreatingManual(false);
+    }
+  }
+
   async function archiveContract(contract: Contract) {
     const res = await fetch(`/api/contracts/${contract.id}`, {
       method: "PATCH",
@@ -396,9 +427,13 @@ export default function ContractsPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={runBackfill} disabled={backfilling}>
+          <Button variant="outline" onClick={runBackfill} disabled={backfilling}>
             {backfilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
             Bestand scannen
+          </Button>
+          <Button onClick={openManual}>
+            <Plus className="mr-2 h-4 w-4" />
+            Vertrag anlegen
           </Button>
         </div>
       </div>
@@ -615,6 +650,27 @@ export default function ContractsPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Vertrag manuell anlegen</DialogTitle>
+            <DialogDescription>
+              Lege einen Vertrag oder ein Abo ohne zugehöriges Dokument an. Dokumente lassen sich später verknüpfen.
+            </DialogDescription>
+          </DialogHeader>
+          <ContractForm form={manualForm} onChange={setManualForm} includeCost />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualOpen(false)} disabled={creatingManual}>
+              Abbrechen
+            </Button>
+            <Button onClick={createManualContract} disabled={creatingManual || !manualForm.name.trim()}>
+              {creatingManual ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Vertrag erstellen
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
