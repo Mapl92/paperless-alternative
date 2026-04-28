@@ -6,6 +6,12 @@ import { logAuditEvent } from "@/lib/audit";
 import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { PDFDocument } from "pdf-lib";
 
+const PDF_HEADER = "%PDF-";
+
+function hasPdfHeader(buffer: Buffer) {
+  return buffer.subarray(0, 5).toString("utf8") === PDF_HEADER;
+}
+
 interface SplitRange {
   from: number; // 1-indexed, inclusive
   to: number;   // 1-indexed, inclusive
@@ -47,11 +53,23 @@ export async function POST(
     if (!sourceDoc) {
       return NextResponse.json({ error: "Dokument nicht gefunden" }, { status: 404 });
     }
-    if (!sourceDoc.originalFile) {
+    const pdfPath = sourceDoc.archiveFile || sourceDoc.originalFile;
+    if (!pdfPath) {
       return NextResponse.json({ error: "Keine Originaldatei vorhanden" }, { status: 400 });
     }
 
-    const pdfBytes = await readFileFromStorage(sourceDoc.originalFile);
+    const pdfBytes = await readFileFromStorage(pdfPath);
+    if (!hasPdfHeader(pdfBytes)) {
+      return NextResponse.json(
+        {
+          error:
+            "Dieses Dokument ist keine PDF-Datei oder wurde noch nicht in ein PDF-Archiv verarbeitet. " +
+            "Bitte das Dokument zuerst per KI verarbeiten.",
+        },
+        { status: 400 }
+      );
+    }
+
     const srcPdf = await PDFDocument.load(pdfBytes);
     const totalPages = srcPdf.getPageCount();
 

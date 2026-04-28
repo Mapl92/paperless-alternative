@@ -7,6 +7,11 @@ import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { PDFDocument } from "pdf-lib";
 
 const MAX_MERGE_DOCS = 50;
+const PDF_HEADER = "%PDF-";
+
+function hasPdfHeader(buffer: Buffer) {
+  return buffer.subarray(0, 5).toString("utf8") === PDF_HEADER;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,8 +66,21 @@ export async function POST(request: NextRequest) {
     const mergedPdf = await PDFDocument.create();
 
     for (const doc of ordered) {
-      if (!doc.originalFile) continue;
-      const pdfBytes = await readFileFromStorage(doc.originalFile);
+      const pdfPath = doc.archiveFile || doc.originalFile;
+      if (!pdfPath) continue;
+
+      const pdfBytes = await readFileFromStorage(pdfPath);
+      if (!hasPdfHeader(pdfBytes)) {
+        return NextResponse.json(
+          {
+            error:
+              `Dokument "${doc.title}" ist keine PDF-Datei oder wurde noch nicht in ein PDF-Archiv verarbeitet. ` +
+              "Bitte nur PDF-Dokumente zusammenführen oder das Dokument zuerst per KI verarbeiten.",
+          },
+          { status: 400 }
+        );
+      }
+
       const srcPdf = await PDFDocument.load(pdfBytes);
       const pages = await mergedPdf.copyPages(srcPdf, srcPdf.getPageIndices());
       pages.forEach((page) => mergedPdf.addPage(page));
