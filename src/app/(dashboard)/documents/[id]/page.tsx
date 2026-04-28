@@ -47,7 +47,6 @@ import {
   Square,
   Tag,
   Trash2,
-  Unlink,
   User,
   X,
   Zap,
@@ -164,6 +163,8 @@ export default function DocumentDetailPage({
   // Split state
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitRanges, setSplitRanges] = useState(""); // e.g. "1-3, 4-6"
+  const [splitTitles, setSplitTitles] = useState("");
+  const [splitProcessWithAi, setSplitProcessWithAi] = useState(true);
   const [splitting, setSplitting] = useState(false);
 
   async function handleSplit() {
@@ -193,13 +194,21 @@ export default function DocumentDetailPage({
       toast.error("Keine Seitenbereiche angegeben");
       return;
     }
+    const titles = splitTitles.split("\n").map((line) => line.trim());
+    const rangesWithTitles = ranges.map((range, index) => ({
+      ...range,
+      title: titles[index] || undefined,
+    }));
 
     setSplitting(true);
     try {
       const res = await fetch(`/api/documents/${id}/split`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ranges }),
+        body: JSON.stringify({
+          ranges: rangesWithTitles,
+          processWithAi: splitProcessWithAi,
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -208,7 +217,14 @@ export default function DocumentDetailPage({
       const data = await res.json();
       setSplitOpen(false);
       setSplitRanges("");
-      toast.success(`${data.documents.length} neue Dokumente erstellt — KI verarbeitet im Hintergrund`);
+      setSplitTitles("");
+      setSplitProcessWithAi(true);
+      toast.success(
+        splitProcessWithAi
+          ? `${data.documents.length} neue Dokumente erstellt — KI verarbeitet im Hintergrund`
+          : `${data.documents.length} neue Dokumente erstellt`
+      );
+      router.push(`/documents/${data.documents[0].id}`);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -819,7 +835,12 @@ export default function DocumentDetailPage({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { setSplitRanges(""); setSplitOpen(true); }}
+              onClick={() => {
+                setSplitRanges("");
+                setSplitTitles("");
+                setSplitProcessWithAi(true);
+                setSplitOpen(true);
+              }}
             >
               <Scissors className="mr-2 h-4 w-4" />
               Aufteilen
@@ -1914,7 +1935,7 @@ export default function DocumentDetailPage({
             <DialogDescription>
               Dokument hat {doc.pageCount} Seite{doc.pageCount === 1 ? "" : "n"}.
               Gib Seitenbereiche kommagetrennt ein — z.B. <code className="bg-muted px-1 rounded text-xs">1-3, 4-6</code> oder <code className="bg-muted px-1 rounded text-xs">1, 2-5, 6</code>.
-              Für jedes Segment wird ein neues Dokument erstellt und per KI verarbeitet.
+              Für jedes Segment wird ein neues Dokument erstellt, danach wird das Original endgültig entfernt.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1936,6 +1957,25 @@ export default function DocumentDetailPage({
                 : "1, 2, 3, ..."}{" "}
               ein.
             </p>
+            <div>
+              <label className="text-sm font-medium">Titel der neuen Dokumente</label>
+              <Textarea
+                className="mt-1 min-h-24"
+                placeholder={"Optional, ein Titel pro Zeile\nz.B. Rechnung\nz.B. Lieferschein"}
+                value={splitTitles}
+                onChange={(e) => setSplitTitles(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Leere Zeilen nutzen automatisch Titel mit Seitenbereich.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={splitProcessWithAi}
+                onCheckedChange={(v) => setSplitProcessWithAi(Boolean(v))}
+              />
+              <span className="text-sm">Neue Dokumente per KI verarbeiten</span>
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSplitOpen(false)} disabled={splitting}>

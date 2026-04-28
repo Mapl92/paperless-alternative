@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { readFileFromStorage, saveOriginal } from "@/lib/files/storage";
 import { processDocument } from "@/lib/ai/process-document";
 import { logAuditEvent } from "@/lib/audit";
+import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { PDFDocument } from "pdf-lib";
 
 interface SplitRange {
@@ -19,7 +20,10 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { ranges } = body as { ranges: SplitRange[] };
+    const { ranges, processWithAi = true } = body as {
+      ranges: SplitRange[];
+      processWithAi?: boolean;
+    };
 
     if (!ranges?.length || ranges.length < 1) {
       return NextResponse.json(
@@ -31,7 +35,14 @@ export async function POST(
     // Load source document
     const sourceDoc = await prisma.document.findUnique({
       where: { id },
-      select: { id: true, title: true, originalFile: true, pageCount: true },
+      select: {
+        id: true,
+        title: true,
+        originalFile: true,
+        archiveFile: true,
+        thumbnailFile: true,
+        pageCount: true,
+      },
     });
     if (!sourceDoc) {
       return NextResponse.json({ error: "Dokument nicht gefunden" }, { status: 404 });
@@ -97,23 +108,24 @@ export async function POST(
         source: "ui",
       });
 
-      // Schedule AI processing (fire-and-forget)
-      processDocument(newDoc.id, buffer).catch((err) =>
-        console.error(`Split: processing failed for ${newDoc.id}:`, err)
-      );
+      if (processWithAi) {
+        processDocument(newDoc.id, buffer).catch((err) =>
+          console.error(`Split: processing failed for ${newDoc.id}:`, err)
+        );
+      }
 
       created.push({ id: newDoc.id, title: newDoc.title });
     }
 
-    // Log split action on source document
     logAuditEvent({
       entityType: "document",
       entityId: id,
       entityTitle: sourceDoc.title,
-      action: "update",
-      changesSummary: `In ${ranges.length} Teil(e) aufgeteilt`,
+      action: "delete",
+      changesSummary: `Durch Aufteilen in ${ranges.length} Teil(e) ersetzt`,
       source: "ui",
     });
+    await permanentlyDeleteDocuments([sourceDoc]);
 
     return NextResponse.json({ documents: created }, { status: 201 });
   } catch (error) {

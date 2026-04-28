@@ -60,7 +60,7 @@ export function BulkActionsBar({
   // Merge state
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTitle, setMergeTitle] = useState("");
-  const [mergeTrash, setMergeTrash] = useState(false);
+  const [mergeProcessWithAi, setMergeProcessWithAi] = useState(true);
   const [merging, setMerging] = useState(false);
 
   async function handleMerge() {
@@ -76,7 +76,7 @@ export function BulkActionsBar({
         body: JSON.stringify({
           documentIds: Array.from(selectedIds),
           title: mergeTitle.trim(),
-          trashOriginals: mergeTrash,
+          processWithAi: mergeProcessWithAi,
         }),
       });
       if (!res.ok) {
@@ -86,10 +86,14 @@ export function BulkActionsBar({
       const data = await res.json();
       setMergeOpen(false);
       setMergeTitle("");
-      setMergeTrash(false);
+      setMergeProcessWithAi(true);
       onClearSelection();
       onRefresh();
-      toast.success("Dokumente zusammengeführt — KI verarbeitet im Hintergrund");
+      toast.success(
+        mergeProcessWithAi
+          ? "Dokumente zusammengeführt — KI verarbeitet im Hintergrund"
+          : "Dokumente zusammengeführt"
+      );
       router.push(`/documents/${data.document.id}`);
     } catch (err) {
       toast.error((err as Error).message);
@@ -185,7 +189,7 @@ export function BulkActionsBar({
           </DialogTitle>
           <DialogDescription>
             {selectedCount} Dokumente werden in der Reihenfolge der Auswahl zu einer PDF zusammengeführt.
-            Das neue Dokument wird automatisch per KI verarbeitet.
+            Die ursprünglichen Dokumente werden danach endgültig entfernt.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
@@ -202,11 +206,14 @@ export function BulkActionsBar({
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox
-              checked={mergeTrash}
-              onCheckedChange={(v) => setMergeTrash(Boolean(v))}
+              checked={mergeProcessWithAi}
+              onCheckedChange={(v) => setMergeProcessWithAi(Boolean(v))}
             />
-            <span className="text-sm">Originaldokumente danach in den Papierkorb verschieben</span>
+            <span className="text-sm">Neues Dokument per KI verarbeiten</span>
           </label>
+          <p className="text-xs text-muted-foreground">
+            Nach dem Zusammenführen bleibt nur das neue Dokument erhalten.
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setMergeOpen(false)} disabled={merging}>
@@ -294,7 +301,7 @@ export function BulkActionsBar({
               size="sm"
               onClick={() => {
                 setMergeTitle("");
-                setMergeTrash(false);
+                setMergeProcessWithAi(true);
                 setMergeOpen(true);
               }}
               disabled={loading}

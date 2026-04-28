@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { readFileFromStorage, saveOriginal } from "@/lib/files/storage";
 import { processDocument } from "@/lib/ai/process-document";
 import { logAuditEvent } from "@/lib/audit";
+import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { PDFDocument } from "pdf-lib";
 
 const MAX_MERGE_DOCS = 50;
@@ -10,10 +11,10 @@ const MAX_MERGE_DOCS = 50;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { documentIds, title, trashOriginals } = body as {
+    const { documentIds, title, processWithAi = true } = body as {
       documentIds: string[];
       title: string;
-      trashOriginals?: boolean;
+      processWithAi?: boolean;
     };
 
     if (!documentIds?.length || documentIds.length < 2) {
@@ -35,7 +36,13 @@ export async function POST(request: NextRequest) {
     // Load source documents in requested order
     const docs = await prisma.document.findMany({
       where: { id: { in: documentIds }, deletedAt: null },
-      select: { id: true, title: true, originalFile: true },
+      select: {
+        id: true,
+        title: true,
+        originalFile: true,
+        archiveFile: true,
+        thumbnailFile: true,
+      },
     });
 
     // Preserve the requested order
@@ -79,23 +86,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Optionally soft-delete originals
-    if (trashOriginals) {
-      await prisma.document.updateMany({
-        where: { id: { in: ordered.map((d) => d.id) } },
-        data: { deletedAt: new Date() },
+    for (const doc of ordered) {
+      logAuditEvent({
+        entityType: "document",
+        entityId: doc.id,
+        entityTitle: doc.title,
+        action: "delete",
+        changesSummary: `Durch Zusammenführung zu "${mergedTitle}" ersetzt`,
+        source: "ui",
       });
-      for (const doc of ordered) {
-        logAuditEvent({
-          entityType: "document",
-          entityId: doc.id,
-          entityTitle: doc.title,
-          action: "trash",
-          changesSummary: `In Papierkorb nach Zusammenführung zu "${mergedTitle}"`,
-          source: "ui",
-        });
-      }
     }
+    await permanentlyDeleteDocuments(ordered);
 
     // Log new merged document
     logAuditEvent({
@@ -107,10 +108,11 @@ export async function POST(request: NextRequest) {
       source: "ui",
     });
 
-    // Schedule AI processing
-    processDocument(newDoc.id, buffer).catch((err) =>
-      console.error(`Merge: processing failed for ${newDoc.id}:`, err)
-    );
+    if (processWithAi) {
+      processDocument(newDoc.id, buffer).catch((err) =>
+        console.error(`Merge: processing failed for ${newDoc.id}:`, err)
+      );
+    }
 
     return NextResponse.json({ document: { id: newDoc.id, title: newDoc.title } }, { status: 201 });
   } catch (error) {
