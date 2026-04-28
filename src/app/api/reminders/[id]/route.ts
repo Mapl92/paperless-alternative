@@ -23,6 +23,7 @@ export async function PATCH(
       data: updateData,
       include: {
         document: { select: { id: true, title: true } },
+        contract: { select: { id: true, name: true } },
       },
     });
 

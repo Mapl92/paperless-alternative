@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const status = searchParams.get("status"); // "pending" | "dismissed" | "all" (default: all)
   const documentId = searchParams.get("documentId");
+  const contractId = searchParams.get("contractId");
   const limit = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200);
   const offset = parseInt(searchParams.get("offset") ?? "0");
 
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
   if (documentId) {
     where.documentId = documentId;
   }
+  if (contractId) {
+    where.contractId = contractId;
+  }
 
   const [reminders, total] = await Promise.all([
     prisma.reminder.findMany({
@@ -29,6 +33,7 @@ export async function GET(request: NextRequest) {
       skip: offset,
       include: {
         document: { select: { id: true, title: true } },
+        contract: { select: { id: true, name: true } },
       },
     }),
     prisma.reminder.count({ where }),
@@ -41,7 +46,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, note, remindAt, documentId } = body;
+    const { title, note, remindAt, documentId, contractId } = body;
 
     if (!title || !remindAt) {
       return NextResponse.json(
@@ -56,9 +61,11 @@ export async function POST(request: NextRequest) {
         note: note ? String(note).trim() : null,
         remindAt: new Date(remindAt),
         documentId: documentId ?? null,
+        contractId: contractId ?? null,
       },
       include: {
         document: { select: { id: true, title: true } },
+        contract: { select: { id: true, name: true } },
       },
     });
 

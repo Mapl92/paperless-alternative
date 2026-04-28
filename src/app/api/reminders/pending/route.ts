@@ -14,6 +14,7 @@ export async function GET() {
     take: 10,
     include: {
       document: { select: { id: true, title: true } },
+      contract: { select: { id: true, name: true } },
     },
   });
 

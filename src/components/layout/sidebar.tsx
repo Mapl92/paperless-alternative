@@ -18,6 +18,7 @@ import {
   ScanSearch,
   Trash2,
   Bell,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/search", label: "Suche", icon: Search },
   { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/contracts", label: "Verträge", icon: ShieldCheck },
   { href: "/todos", label: "Aufgaben", icon: CheckSquare },
   { href: "/reminders", label: "Erinnerungen", icon: Bell },
   { href: "/duplicates", label: "Duplikate", icon: ScanSearch },
@@ -123,7 +125,7 @@ function SidebarContent() {
       <div className="flex h-14 items-center gap-2 border-b px-4">
         {branding.hasLogo ? (
           <img
-            src={`/api/branding/logo?v=${Date.now()}`}
+            src="/api/branding/logo"
             alt={branding.appName}
             className="h-8 w-8 rounded-lg object-contain"
           />

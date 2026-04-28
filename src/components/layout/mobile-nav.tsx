@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { CheckSquare, FileText, LayoutDashboard, Moon, Sun, Upload, Search, Settings } from "lucide-react";
+import { CheckSquare, FileText, LayoutDashboard, Moon, Sun, Upload, ShieldCheck, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const items = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/documents", label: "Dokumente", icon: FileText },
   { href: "/upload", label: "Upload", icon: Upload },
-  { href: "/search", label: "Suche", icon: Search },
+  { href: "/contracts", label: "Verträge", icon: ShieldCheck },
   { href: "/todos", label: "Aufgaben", icon: CheckSquare },
   { href: "/settings", label: "Mehr", icon: Settings },
 ];

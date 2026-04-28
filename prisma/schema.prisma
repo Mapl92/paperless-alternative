@@ -37,6 +37,9 @@ model Document {
   todos         Todo[]
   reminders     Reminder[]
   shareLinks    ShareLink[]
+  contractDocuments ContractDocument[]
+  contractCandidates ContractCandidate[]
+  contractCosts ContractCost[]
   relationsAsSource DocumentRelation[] @relation("SourceDocument")
   relationsAsTarget DocumentRelation[] @relation("TargetDocument")
 
@@ -61,6 +64,7 @@ model Correspondent {
   createdAt DateTime       @default(now())
   documents Document[]
   matchingRules MatchingRule[]
+  contracts Contract[]
 }
 
 model DocumentType {
@@ -243,6 +247,105 @@ model ShareLink {
   @@index([expiresAt])
 }
 
+model Contract {
+  id                   String   @id @default(uuid())
+  name                 String
+  category             String
+  status               String   @default("active") // active | cancelled | expired | archived
+  providerName         String?
+  correspondentId      String?
+  contractNumber       String?
+  customerNumber       String?
+  startDate            DateTime?
+  endDate              DateTime?
+  cancellationDeadline DateTime?
+  cancellationPeriod   String?
+  renewalInterval      String?
+  notes                String?  @db.Text
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  correspondent Correspondent? @relation(fields: [correspondentId], references: [id], onDelete: SetNull)
+  costs         ContractCost[]
+  documents     ContractDocument[]
+  candidates    ContractCandidate[]
+  reminders     Reminder[]
+
+  @@index([status])
+  @@index([category])
+  @@index([correspondentId])
+  @@index([cancellationDeadline])
+  @@index([endDate])
+}
+
+model ContractCost {
+  id               String    @id @default(uuid())
+  contractId       String
+  amount           Decimal   @db.Decimal(12, 2)
+  currency         String    @default("EUR")
+  billingInterval  String    @default("monthly") // monthly | quarterly | yearly | once | unknown
+  validFrom        DateTime?
+  validTo          DateTime?
+  sourceDocumentId String?
+  note             String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  contract       Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([contractId])
+  @@index([sourceDocumentId])
+  @@index([validFrom])
+}
+
+model ContractDocument {
+  id         String   @id @default(uuid())
+  contractId String
+  documentId String
+  role       String   @default("source") // source | change | cancellation | invoice | other
+  createdAt  DateTime @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, documentId])
+  @@index([contractId])
+  @@index([documentId])
+}
+
+model ContractCandidate {
+  id                   String    @id @default(uuid())
+  documentId           String    @unique
+  contractId           String?
+  status               String    @default("pending") // pending | confirmed | ignored
+  contractName         String?
+  category             String?
+  providerName         String?
+  contractNumber       String?
+  customerNumber       String?
+  startDate            DateTime?
+  endDate              DateTime?
+  cancellationDeadline DateTime?
+  cancellationPeriod   String?
+  renewalInterval      String?
+  amount               Decimal?  @db.Decimal(12, 2)
+  currency             String    @default("EUR")
+  billingInterval      String?
+  confidence           Float     @default(0)
+  evidence             Json      @default("[]")
+  extractedData        Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  document Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([contractId])
+  @@index([createdAt])
+}
+
 model Reminder {
   id         String    @id @default(uuid())
   title      String
@@ -250,13 +353,16 @@ model Reminder {
   remindAt   DateTime
   dismissed  Boolean   @default(false)
   documentId String?
+  contractId String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
   document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@index([dismissed, remindAt])
   @@index([documentId])
+  @@index([contractId])
 }
 
 model DocumentRelation {

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { performOCROnMultiplePages } from "./ocr";
 import { classifyDocument } from "./classify";
+import { detectContractCandidate } from "./contracts";
 import { generateEmbedding, storeEmbedding } from "./embeddings";
 import { applyMatchingRules } from "./apply-rules";
 import { getAISettings } from "./settings";
@@ -279,6 +280,14 @@ export async function processDocument(documentId: string, fileBuffer: Buffer) {
       await applyMatchingRules(documentId);
     } catch (ruleError) {
       console.warn(`[rules] Failed to apply rules for ${documentId}:`, ruleError);
+    }
+
+    // Detect contract/subscription candidates for review. Errors are non-fatal
+    // because the main OCR/classification result is already persisted.
+    try {
+      await detectContractCandidate(documentId, ocrText);
+    } catch (contractError) {
+      console.warn(`[contracts] Failed to detect contract for ${documentId}:`, contractError);
     }
 
     // Generate and store embedding (non-blocking, errors are not fatal)
