@@ -44,12 +44,13 @@ export async function PATCH(
       documentDate,
       expiresAt,
       tagIds,
+      projectId,
     } = body;
 
     // Load current state for audit diff
     const before = await prisma.document.findUnique({
       where: { id },
-      select: { title: true, correspondentId: true, documentTypeId: true, documentDate: true, expiresAt: true },
+      select: { title: true, correspondentId: true, documentTypeId: true, documentDate: true, expiresAt: true, projectId: true },
     });
 
     const updateData: Record<string, unknown> = {};
@@ -63,6 +64,8 @@ export async function PATCH(
       updateData.documentDate = documentDate ? new Date(documentDate) : null;
     if (expiresAt !== undefined)
       updateData.expiresAt = expiresAt ? new Date(expiresAt) : null;
+    // projectId: string → assign to project, null → move back to general documents
+    if (projectId !== undefined) updateData.projectId = projectId || null;
 
     if (tagIds !== undefined) {
       updateData.tags = {
@@ -89,6 +92,7 @@ export async function PATCH(
       if (documentTypeId !== undefined) newVals.documentTypeId = documentTypeId;
       if (documentDate !== undefined) newVals.documentDate = documentDate;
       if (expiresAt !== undefined) newVals.expiresAt = expiresAt;
+      if (projectId !== undefined) newVals.projectId = projectId || null;
 
       // Build name map for IDs
       const nameMap: Record<string, string> = {};
@@ -98,6 +102,15 @@ export async function PATCH(
       if (prevCorrespondent && before.correspondentId) nameMap[before.correspondentId] = prevCorrespondent.name;
       const prevDocType = before.documentTypeId ? await prisma.documentType.findUnique({ where: { id: before.documentTypeId }, select: { name: true } }) : null;
       if (prevDocType && before.documentTypeId) nameMap[before.documentTypeId] = prevDocType.name;
+      // Resolve project names for the diff (old + new)
+      if (before.projectId) {
+        const prevProject = await prisma.project.findUnique({ where: { id: before.projectId }, select: { name: true } });
+        if (prevProject) nameMap[before.projectId] = prevProject.name;
+      }
+      if (projectId) {
+        const newProject = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
+        if (newProject) nameMap[projectId] = newProject.name;
+      }
 
       const summary = buildChangesSummary(oldVals, newVals, nameMap);
       logAuditEvent({

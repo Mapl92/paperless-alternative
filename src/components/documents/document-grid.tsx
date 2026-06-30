@@ -18,6 +18,10 @@ interface DocumentGridProps {
   documentDateTo?: string;
   addedDateFrom?: string;
   addedDateTo?: string;
+  /** When set, shows only this project's documents; otherwise the general pool. */
+  projectId?: string;
+  /** Allows dragging cards onto sidebar projects (default true for the general grid). */
+  draggable?: boolean;
 }
 
 interface DocumentData {
@@ -44,6 +48,8 @@ export function DocumentGrid({
   documentDateTo,
   addedDateFrom,
   addedDateTo,
+  projectId,
+  draggable = true,
 }: DocumentGridProps) {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +72,7 @@ export function DocumentGrid({
     if (documentDateTo) params.set("documentDateTo", documentDateTo);
     if (addedDateFrom) params.set("addedDateFrom", addedDateFrom);
     if (addedDateTo) params.set("addedDateTo", addedDateTo);
+    if (projectId) params.set("projectId", projectId);
     params.set("sortField", sortField);
     params.set("sortOrder", sortOrder);
 
@@ -80,7 +87,7 @@ export function DocumentGrid({
     } finally {
       setLoading(false);
     }
-  }, [page, search, tagId, correspondentId, documentTypeId, sortField, sortOrder, documentDateFrom, documentDateTo, addedDateFrom, addedDateTo]);
+  }, [page, search, tagId, correspondentId, documentTypeId, sortField, sortOrder, documentDateFrom, documentDateTo, addedDateFrom, addedDateTo, projectId]);
 
   useEffect(() => {
     fetchDocuments();
@@ -88,7 +95,17 @@ export function DocumentGrid({
 
   useEffect(() => {
     setPage(1);
-  }, [search, tagId, correspondentId, documentTypeId, sortField, sortOrder, documentDateFrom, documentDateTo, addedDateFrom, addedDateTo]);
+  }, [search, tagId, correspondentId, documentTypeId, sortField, sortOrder, documentDateFrom, documentDateTo, addedDateFrom, addedDateTo, projectId]);
+
+  // A document was dragged into / out of a project elsewhere (sidebar drop,
+  // bulk move) — refetch so it appears/disappears from this grid immediately.
+  useEffect(() => {
+    function onMoved() {
+      fetchDocuments();
+    }
+    window.addEventListener("documind-doc-moved", onMoved);
+    return () => window.removeEventListener("documind-doc-moved", onMoved);
+  }, [fetchDocuments]);
 
   // #20: Keep selectMode in a ref so the keyboard handler never needs to be re-registered
   const selectModeRef = useRef(selectMode);
@@ -198,6 +215,7 @@ export function DocumentGrid({
             selectable={selectMode}
             selected={selectedIds.has(doc.id)}
             onSelect={toggleSelect}
+            draggable={draggable && !selectMode}
           />
         ))}
       </div>
@@ -236,6 +254,7 @@ export function DocumentGrid({
           selectedIds={selectedIds}
           onClearSelection={exitSelectMode}
           onRefresh={fetchDocuments}
+          currentProjectId={projectId}
         />
       )}
     </div>

@@ -62,9 +62,9 @@ export async function GET() {
     prisma.document.count({ where: { aiProcessed: false, deletedAt: null } }),
     prisma.todo.count({ where: { completed: false } }),
 
-    // Last 6 docs
+    // Last 6 docs (general pool only — project documents live in their projects)
     prisma.document.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, projectId: null },
       take: 6,
       orderBy: { createdAt: "desc" },
       select: {
@@ -91,9 +91,9 @@ export async function GET() {
       },
     }),
 
-    // Docs without tags AND without correspondent (need attention)
+    // Docs without tags AND without correspondent (need attention) — general pool only
     prisma.document.findMany({
-      where: { tags: { none: {} }, correspondentId: null, aiProcessed: true, deletedAt: null },
+      where: { tags: { none: {} }, correspondentId: null, aiProcessed: true, deletedAt: null, projectId: null },
       take: 6,
       orderBy: { createdAt: "desc" },
       select: {

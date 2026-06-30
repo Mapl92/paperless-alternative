@@ -30,6 +30,10 @@ export async function GET(request: NextRequest) {
   const mode = (searchParams.get("mode") || "hybrid") as SearchMode;
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "24");
+  // Project scoping: ?projectId=<id> searches within that project only.
+  // Without it, search covers only general documents (projectId IS NULL) —
+  // documents assigned to a project are excluded from the global search.
+  const projectId = searchParams.get("projectId");
 
   if (!query) {
     return NextResponse.json({ documents: [], total: 0, page, totalPages: 0 });
@@ -37,15 +41,15 @@ export async function GET(request: NextRequest) {
 
   try {
     if (mode === "text") {
-      return await textSearch(query, page, limit);
+      return await textSearch(query, page, limit, projectId);
     }
 
     if (mode === "semantic") {
-      return await semanticSearch(query, page, limit);
+      return await semanticSearch(query, page, limit, projectId);
     }
 
     // hybrid (default)
-    return await hybridSearch(query, page, limit);
+    return await hybridSearch(query, page, limit, projectId);
   } catch (error) {
     console.error("Search error:", error);
     return NextResponse.json(
@@ -55,9 +59,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function textSearch(query: string, page: number, limit: number) {
+async function textSearch(query: string, page: number, limit: number, projectId: string | null) {
   const where = {
     deletedAt: null,
+    projectId: projectId || null,
     OR: [
       { title: { contains: query, mode: "insensitive" as const } },
       { content: { contains: query, mode: "insensitive" as const } },
@@ -83,15 +88,19 @@ async function textSearch(query: string, page: number, limit: number) {
   });
 }
 
-async function semanticSearch(query: string, page: number, limit: number) {
+async function semanticSearch(query: string, page: number, limit: number, projectId: string | null) {
   const embedding = await generateQueryEmbedding(query);
   if (!embedding) {
     // Fallback to text search if embedding generation fails
-    return textSearch(query, page, limit);
+    return textSearch(query, page, limit, projectId);
   }
 
   const vectorStr = toVectorString(embedding);
   const offset = (page - 1) * limit;
+
+  // Project scoping clause for the raw SQL (param $4 holds the projectId when set)
+  const projClause = projectId ? `AND "projectId" = $4` : `AND "projectId" IS NULL`;
+  const searchParams = projectId ? [vectorStr, limit, offset, projectId] : [vectorStr, limit, offset];
 
   // Cosine similarity search via pgvector
   const searchStart = Date.now();
@@ -100,9 +109,10 @@ async function semanticSearch(query: string, page: number, limit: number) {
      FROM "Document"
      WHERE "embedding" IS NOT NULL
        AND "deletedAt" IS NULL
+       ${projClause}
      ORDER BY "embedding" <=> $1::vector
      LIMIT $2 OFFSET $3`,
-    [vectorStr, limit, offset]
+    searchParams
   );
   logApiCall({
     type: "vector-search",
@@ -112,8 +122,10 @@ async function semanticSearch(query: string, page: number, limit: number) {
     metadata: { mode: "semantic", resultCount: result.rows.length },
   });
 
+  const countClause = projectId ? `AND "projectId" = $1` : `AND "projectId" IS NULL`;
   const countResult = await pool.query(
-    `SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL AND "deletedAt" IS NULL`
+    `SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL AND "deletedAt" IS NULL ${countClause}`,
+    projectId ? [projectId] : []
   );
   const total = parseInt(countResult.rows[0].count);
 
@@ -148,12 +160,12 @@ async function semanticSearch(query: string, page: number, limit: number) {
   });
 }
 
-async function hybridSearch(query: string, page: number, limit: number) {
+async function hybridSearch(query: string, page: number, limit: number, projectId: string | null) {
   const embedding = await generateQueryEmbedding(query);
 
   // If no embedding available, fall back to text-only
   if (!embedding) {
-    return textSearch(query, page, limit);
+    return textSearch(query, page, limit, projectId);
   }
 
   const vectorStr = toVectorString(embedding);
@@ -162,6 +174,7 @@ async function hybridSearch(query: string, page: number, limit: number) {
   const textResults = await prisma.document.findMany({
     where: {
       deletedAt: null,
+      projectId: projectId || null,
       OR: [
         { title: { contains: query, mode: "insensitive" } },
         { content: { contains: query, mode: "insensitive" } },
@@ -173,15 +186,17 @@ async function hybridSearch(query: string, page: number, limit: number) {
   });
 
   // Get semantic search results (top 50 for fusion)
+  const projClause = projectId ? `AND "projectId" = $2` : `AND "projectId" IS NULL`;
   const searchStart = Date.now();
   const semanticResult = await pool.query(
     `SELECT id, 1 - ("embedding" <=> $1::vector) as similarity
      FROM "Document"
      WHERE "embedding" IS NOT NULL
        AND "deletedAt" IS NULL
+       ${projClause}
      ORDER BY "embedding" <=> $1::vector
      LIMIT 50`,
-    [vectorStr]
+    projectId ? [vectorStr, projectId] : [vectorStr]
   );
   logApiCall({
     type: "vector-search",

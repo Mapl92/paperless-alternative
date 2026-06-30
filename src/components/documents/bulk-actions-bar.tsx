@@ -19,7 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tags, Trash2, User, FileType, X, Loader2, Search, Download, Merge } from "lucide-react";
+import { Tags, Trash2, User, FileType, X, Loader2, Search, Download, Merge, FolderInput } from "lucide-react";
 import { toast } from "sonner";
 
 interface Tag {
@@ -38,11 +38,18 @@ interface DocumentType {
   name: string;
 }
 
+interface Project {
+  id: string;
+  name: string;
+}
+
 interface BulkActionsBarProps {
   selectedCount: number;
   selectedIds: Set<string>;
   onClearSelection: () => void;
   onRefresh: () => void;
+  /** Current project context (set on a project page) — enables "move out" semantics. */
+  currentProjectId?: string;
 }
 
 export function BulkActionsBar({
@@ -50,11 +57,13 @@ export function BulkActionsBar({
   selectedIds,
   onClearSelection,
   onRefresh,
+  currentProjectId,
 }: BulkActionsBarProps) {
   const router = useRouter();
   const [tags, setTags] = useState<Tag[]>([]);
   const [correspondents, setCorrespondents] = useState<Correspondent[]>([]);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Merge state
@@ -107,10 +116,12 @@ export function BulkActionsBar({
       fetch("/api/tags").then((r) => r.json()),
       fetch("/api/correspondents").then((r) => r.json()),
       fetch("/api/document-types").then((r) => r.json()),
-    ]).then(([t, c, d]) => {
+      fetch("/api/projects").then((r) => r.json()),
+    ]).then(([t, c, d, p]) => {
       setTags(Array.isArray(t) ? t : t.tags || []);
       setCorrespondents(Array.isArray(c) ? c : c.correspondents || []);
       setDocumentTypes(Array.isArray(d) ? d : d.documentTypes || []);
+      setProjects(Array.isArray(p) ? p : []);
     });
   }, []);
 
@@ -294,6 +305,23 @@ export function BulkActionsBar({
             }}
           />
 
+          {/* Project — move into a project, between projects, or back to general */}
+          <SearchableListPopover
+            label={currentProjectId ? "Verschieben" : "In Projekt"}
+            icon={<FolderInput className="mr-1 h-4 w-4" />}
+            items={projects.filter((p) => p.id !== currentProjectId)}
+            loading={loading}
+            nullLabel="Allgemeine Dokumente (kein Projekt)"
+            onSelect={async (id) => {
+              const ok = await executeBulk({ action: "setProject", projectId: id });
+              if (ok) {
+                window.dispatchEvent(new CustomEvent("documind-doc-moved"));
+                toast.success(id ? "In Projekt verschoben" : "In allgemeine Dokumente verschoben");
+              }
+              return ok;
+            }}
+          />
+
           {/* Merge (≥2 docs) */}
           {selectedCount >= 2 && (
             <Button
@@ -353,12 +381,14 @@ function SearchableListPopover({
   items,
   loading,
   onSelect,
+  nullLabel = "— Keiner —",
 }: {
   label: string;
   icon: React.ReactNode;
   items: Array<{ id: string; name: string }>;
   loading: boolean;
   onSelect: (id: string | null) => Promise<boolean>;
+  nullLabel?: string;
 }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -397,7 +427,7 @@ function SearchableListPopover({
                 if (ok) setOpen(false);
               }}
             >
-              <span className="text-muted-foreground">— Keiner —</span>
+              <span className="text-muted-foreground">{nullLabel}</span>
             </button>
             {filtered.map((item) => (
               <button

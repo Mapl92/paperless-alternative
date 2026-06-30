@@ -7,17 +7,18 @@ import { logAuditEvent } from "@/lib/audit";
 const MAX_BULK_ITEMS = 500;
 
 interface BulkRequest {
-  action: "delete" | "trash" | "restore" | "permanentDelete" | "addTags" | "removeTags" | "setCorrespondent" | "setDocumentType";
+  action: "delete" | "trash" | "restore" | "permanentDelete" | "addTags" | "removeTags" | "setCorrespondent" | "setDocumentType" | "setProject";
   documentIds: string[];
   tagIds?: string[];
   correspondentId?: string | null;
   documentTypeId?: string | null;
+  projectId?: string | null;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: BulkRequest = await request.json();
-    const { action, documentIds, tagIds, correspondentId, documentTypeId } = body;
+    const { action, documentIds, tagIds, correspondentId, documentTypeId, projectId } = body;
 
     if (!documentIds?.length) {
       return NextResponse.json(
@@ -247,6 +248,38 @@ export async function POST(request: NextRequest) {
             entityTitle: doc.title,
             action: "bulk",
             changesSummary: `Dokumenttyp gesetzt: ${typeName}`,
+            source: "ui",
+            bulkId,
+          });
+        }
+
+        return NextResponse.json({ success: true, count: documentIds.length });
+      }
+
+      case "setProject": {
+        const docs = await prisma.document.findMany({
+          where: { id: { in: documentIds } },
+          select: { id: true, title: true },
+        });
+
+        await prisma.document.updateMany({
+          where: { id: { in: documentIds } },
+          data: { projectId: projectId || null },
+        });
+
+        let projectName = "Allgemeine Dokumente";
+        if (projectId) {
+          const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
+          if (project) projectName = project.name;
+        }
+
+        for (const doc of docs) {
+          logAuditEvent({
+            entityType: "document",
+            entityId: doc.id,
+            entityTitle: doc.title,
+            action: "bulk",
+            changesSummary: projectId ? `In Projekt verschoben: ${projectName}` : "Aus Projekt entfernt (zurück in allgemeine Dokumente)",
             source: "ui",
             bulkId,
           });

@@ -29,6 +29,7 @@ model Document {
   pageCount       Int?
   mimeType        String    @default("application/pdf")
   deletedAt       DateTime?
+  projectId       String?
 
   correspondent Correspondent? @relation(fields: [correspondentId], references: [id], onDelete: SetNull)
   documentType  DocumentType?  @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
@@ -42,12 +43,26 @@ model Document {
   contractCosts ContractCost[]
   relationsAsSource DocumentRelation[] @relation("SourceDocument")
   relationsAsTarget DocumentRelation[] @relation("TargetDocument")
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([correspondentId])
   @@index([documentTypeId])
   @@index([documentDate])
   @@index([createdAt])
   @@index([title])
+  @@index([projectId])
+}
+
+model Project {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  color     String   @default("#6B7280")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents Document[]
+
+  @@index([name])
 }
 
 model Tag {

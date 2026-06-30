@@ -22,7 +22,12 @@ interface DocumentCardProps {
   selectable?: boolean;
   selected?: boolean;
   onSelect?: (id: string) => void;
+  /** Enables HTML5 drag so the card can be dropped onto a project in the sidebar. */
+  draggable?: boolean;
 }
+
+/** Custom dataTransfer MIME type carrying a document id during drag-to-project. */
+export const DOC_DRAG_TYPE = "application/x-documind-doc";
 
 function getExpiryBadge(expiresAt: string | null): { label: string; className: string } | null {
   if (!expiresAt) return null;
@@ -38,7 +43,7 @@ function getExpiryBadge(expiresAt: string | null): { label: string; className: s
   return null; // far future — no badge on card
 }
 
-export function DocumentCard({ document, selectable, selected, onSelect }: DocumentCardProps) {
+export function DocumentCard({ document, selectable, selected, onSelect, draggable }: DocumentCardProps) {
   const date = document.documentDate || document.createdAt;
   const formattedDate = new Date(date).toLocaleDateString("de-DE", {
     day: "2-digit",
@@ -140,7 +145,20 @@ export function DocumentCard({ document, selectable, selected, onSelect }: Docum
   }
 
   return (
-    <Link href={`/documents/${document.id}`}>
+    <Link
+      href={`/documents/${document.id}`}
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (e) => {
+              e.dataTransfer.setData(DOC_DRAG_TYPE, document.id);
+              e.dataTransfer.setData("text/plain", document.title);
+              e.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
+      className={draggable ? "block cursor-grab active:cursor-grabbing" : undefined}
+    >
       {cardContent}
     </Link>
   );

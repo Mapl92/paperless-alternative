@@ -58,11 +58,20 @@ export async function GET(request: NextRequest) {
   const addedDateFrom = searchParams.get("addedDateFrom");
   const addedDateTo = searchParams.get("addedDateTo");
   const trashed = searchParams.get("trashed") === "true";
+  const projectId = searchParams.get("projectId");
 
   const where: Record<string, unknown> = {
     // By default show only non-trashed docs; ?trashed=true shows only trashed
     deletedAt: trashed ? { not: null } : null,
   };
+
+  // Project scoping (ignored for the trash view, which is global):
+  //   ?projectId=<id> → only that project's documents
+  //   (no param)      → only general documents (not assigned to any project)
+  // Documents assigned to a project are hidden from the general document pool.
+  if (!trashed) {
+    where.projectId = projectId ? projectId : null;
+  }
 
   if (search) {
     where.OR = [

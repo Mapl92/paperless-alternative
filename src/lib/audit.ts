@@ -20,6 +20,7 @@ const FIELD_LABELS: Record<string, string> = {
   documentDate: "Dokumentdatum",
   expiresAt: "Ablaufdatum",
   tags: "Tags",
+  projectId: "Projekt",
 };
 
 // Fields to skip when building a diff
