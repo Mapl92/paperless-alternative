@@ -1,21 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 
-const PUBLIC_PATHS = [
-  "/login",
-  "/api/auth/login",
-  "/sign",
-  "/api/signatures/token",
-  "/api/branding",
-  "/api/settings/branding",
-  "/api/share/",
+// Public pages (no auth) — prefix match
+const PUBLIC_PAGES = ["/login", "/sign/"];
+
+// Public API routes, restricted to the methods the public flows actually need.
+// Paths ending in "/" are prefix-matched, all others exact. Everything else —
+// insbesondere POST /api/signatures/token (Token-Erstellung) und
+// PUT /api/settings/branding — requires auth like any other /api route.
+const PUBLIC_API: { path: string; methods: string[] }[] = [
+  { path: "/api/auth/login", methods: ["POST"] },
+  { path: "/api/signatures/token", methods: ["GET", "HEAD"] },
+  { path: "/api/signatures/token/complete", methods: ["POST"] },
+  { path: "/api/branding/logo", methods: ["GET", "HEAD"] },
+  { path: "/api/settings/branding", methods: ["GET", "HEAD"] },
+  { path: "/api/share/", methods: ["GET", "HEAD"] },
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith("/api/");
 
-  if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
+  if (PUBLIC_PAGES.some((path) => pathname.startsWith(path))) {
+    return NextResponse.next();
+  }
+
+  const publicApi = PUBLIC_API.find((rule) =>
+    rule.path.endsWith("/")
+      ? pathname.startsWith(rule.path)
+      : pathname === rule.path
+  );
+  if (publicApi && publicApi.methods.includes(request.method)) {
     return NextResponse.next();
   }
 
