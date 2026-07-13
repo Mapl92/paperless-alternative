@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 function getSecret(): Uint8Array {
   if (!process.env.AUTH_SECRET) {
@@ -40,9 +40,12 @@ export async function getSession(): Promise<boolean> {
 
 export async function setSessionCookie(token: string) {
   const cookieStore = await cookies();
+  // Secure nur bei HTTPS-Zugriff (z. B. via Reverse Proxy), damit
+  // HTTP-Zugriff im lokalen Netz weiterhin funktioniert.
+  const proto = (await headers()).get("x-forwarded-proto");
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: false,
+    secure: proto === "https",
     sameSite: "lax",
     maxAge: 30 * 24 * 60 * 60, // 30 days
     path: "/",
