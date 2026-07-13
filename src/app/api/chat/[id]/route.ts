@@ -63,7 +63,11 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
-  await prisma.chatConversation.delete({ where: { id } });
+  // deleteMany statt delete: eine fehlende Konversation ist 404, kein 500
+  const { count } = await prisma.chatConversation.deleteMany({ where: { id } });
+  if (count === 0) {
+    return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -74,10 +78,14 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const conversation = await prisma.chatConversation.update({
+  // updateMany statt update: eine fehlende Konversation ist 404, kein 500
+  const { count } = await prisma.chatConversation.updateMany({
     where: { id },
     data: { title: body.title },
   });
-
+  if (count === 0) {
+    return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  }
+  const conversation = await prisma.chatConversation.findUnique({ where: { id } });
   return NextResponse.json(conversation);
 }
