@@ -94,13 +94,13 @@ export async function POST(
     systemPrompt = buildDocumentContext(relevantDocs);
   }
 
-  // Build message history for Gemini
-  const geminiMessages = [
+  // Build OpenRouter message history
+  const chatMessages = [
     ...conversation.messages.map((m) => ({
-      role: (m.role === "assistant" ? "model" : "user") as "user" | "model",
-      parts: [{ text: m.content }],
+      role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+      content: m.content,
     })),
-    { role: "user" as const, parts: [{ text: content }] },
+    { role: "user" as const, content },
   ];
 
   // Fetch document info for refs event
@@ -128,7 +128,7 @@ export async function POST(
       let fullResponse = "";
 
       try {
-        for await (const chunk of streamChatResponse(systemPrompt, geminiMessages)) {
+        for await (const chunk of streamChatResponse(systemPrompt, chatMessages)) {
           fullResponse += chunk;
           controller.enqueue(
             encoder.encode(

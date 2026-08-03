@@ -47,7 +47,9 @@ AUTH_PASSWORD="admin"
 | `AUTH_SECRET` | Yes | Random string for JWT signing. Generate with `openssl rand -hex 32` |
 | `AUTH_PASSWORD` | Yes | Initial login password (changeable in UI) |
 | `OPENROUTER_API_KEY` | Yes | API key from [openrouter.ai](https://openrouter.ai/keys) |
-| `OPENROUTER_MODEL` | No | AI model (default: `openai/gpt-4.1-mini`) |
+| `OPENROUTER_MODEL` | No | AI model (default: `openai/gpt-5.6-luna`) |
+| `OPENROUTER_CHAT_MODEL` | No | Document-chat model (default: `openai/gpt-5.6-luna`) |
+| `EMBEDDING_BACKFILL_DELAY_MS` | No | Delay between embedding backfill requests (default: `4000`) |
 | `GEMINI_API_KEY` | No | Google Gemini key for semantic search and chat |
 | `DATABASE_URL` | No | PostgreSQL connection string (default works with included DB) |
 | `DATA_DIR` | No | Document storage path inside container (default: `/app/data`) |

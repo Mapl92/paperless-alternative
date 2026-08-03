@@ -31,7 +31,9 @@ async function cleanupTrash() {
       try {
         // 1. Delete embedding from pgvector
         await pool.query(
-          `UPDATE "Document" SET "embedding" = NULL WHERE "id" = $1`,
+          `UPDATE "Document"
+           SET "embedding" = NULL, "embeddingModel" = NULL
+           WHERE "id" = $1`,
           [doc.id]
         );
 

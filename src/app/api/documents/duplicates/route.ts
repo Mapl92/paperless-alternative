@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db/prisma";
 import { prisma } from "@/lib/db/prisma";
+import { EMBEDDING_MODEL } from "@/lib/ai/embeddings";
 
 /**
  * Jaccard similarity on word tokens (words > 3 chars, lowercased, punctuation stripped).
@@ -81,6 +82,8 @@ export async function GET(request: NextRequest) {
        JOIN "Document" b ON a.id < b.id
        WHERE a.embedding IS NOT NULL
          AND b.embedding IS NOT NULL
+         AND a."embeddingModel" = $2
+         AND b."embeddingModel" = $2
          AND a."deletedAt" IS NULL
          AND b."deletedAt" IS NULL
          AND a."projectId" IS NULL
@@ -88,12 +91,19 @@ export async function GET(request: NextRequest) {
          AND 1 - (a.embedding <=> b.embedding) > $1
        ORDER BY similarity DESC
        LIMIT 500`,
-      [threshold]
+      [threshold, EMBEDDING_MODEL]
     );
 
     if (result.rows.length === 0) {
       const scanned = await pool
-        .query(`SELECT COUNT(*) FROM "Document" WHERE embedding IS NOT NULL AND "deletedAt" IS NULL AND "projectId" IS NULL`)
+        .query(
+          `SELECT COUNT(*) FROM "Document"
+           WHERE embedding IS NOT NULL
+             AND "embeddingModel" = $1
+             AND "deletedAt" IS NULL
+             AND "projectId" IS NULL`,
+          [EMBEDDING_MODEL]
+        )
         .then((r: { rows: Array<{ count: string }> }) => parseInt(r.rows[0].count));
       return NextResponse.json({ groups: [], scanned, threshold });
     }
@@ -150,7 +160,11 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.maxSimilarity - a.maxSimilarity);
 
     const scanned = await pool
-      .query(`SELECT COUNT(*) FROM "Document" WHERE embedding IS NOT NULL`)
+      .query(
+        `SELECT COUNT(*) FROM "Document"
+         WHERE embedding IS NOT NULL AND "embeddingModel" = $1`,
+        [EMBEDDING_MODEL]
+      )
       .then((r: { rows: Array<{ count: string }> }) => parseInt(r.rows[0].count));
 
     return NextResponse.json({ groups, scanned, threshold });

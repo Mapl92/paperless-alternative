@@ -108,8 +108,12 @@ OCR:
 ${ocrText.slice(0, 10000)}`,
       },
     ],
-    aiSettings.model,
-    "contract-detect"
+    {
+      model: aiSettings.model,
+      action: "contract-detect",
+      reasoningEffort: "medium",
+      maxTokens: 4096,
+    }
   );
 
   const result = parseJsonResponse(response.content);

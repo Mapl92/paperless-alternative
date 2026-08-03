@@ -6,7 +6,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { pool } from "@/lib/db/prisma";
-import { generateQueryEmbedding, toVectorString } from "@/lib/ai/embeddings";
+import {
+  EMBEDDING_MODEL,
+  generateQueryEmbedding,
+  toVectorString,
+} from "@/lib/ai/embeddings";
 import { logApiCall } from "@/lib/logging";
 
 type SearchMode = "text" | "semantic" | "hybrid";
@@ -98,9 +102,11 @@ async function semanticSearch(query: string, page: number, limit: number, projec
   const vectorStr = toVectorString(embedding);
   const offset = (page - 1) * limit;
 
-  // Project scoping clause for the raw SQL (param $4 holds the projectId when set)
-  const projClause = projectId ? `AND "projectId" = $4` : `AND "projectId" IS NULL`;
-  const searchParams = projectId ? [vectorStr, limit, offset, projectId] : [vectorStr, limit, offset];
+  // $4 is the embedding model; optional project scoping uses $5.
+  const projClause = projectId ? `AND "projectId" = $5` : `AND "projectId" IS NULL`;
+  const searchParams = projectId
+    ? [vectorStr, limit, offset, EMBEDDING_MODEL, projectId]
+    : [vectorStr, limit, offset, EMBEDDING_MODEL];
 
   // Cosine similarity search via pgvector
   const searchStart = Date.now();
@@ -108,6 +114,7 @@ async function semanticSearch(query: string, page: number, limit: number, projec
     `SELECT id, 1 - ("embedding" <=> $1::vector) as similarity
      FROM "Document"
      WHERE "embedding" IS NOT NULL
+       AND "embeddingModel" = $4
        AND "deletedAt" IS NULL
        ${projClause}
      ORDER BY "embedding" <=> $1::vector
@@ -122,10 +129,14 @@ async function semanticSearch(query: string, page: number, limit: number, projec
     metadata: { mode: "semantic", resultCount: result.rows.length },
   });
 
-  const countClause = projectId ? `AND "projectId" = $1` : `AND "projectId" IS NULL`;
+  const countClause = projectId ? `AND "projectId" = $2` : `AND "projectId" IS NULL`;
   const countResult = await pool.query(
-    `SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL AND "deletedAt" IS NULL ${countClause}`,
-    projectId ? [projectId] : []
+    `SELECT COUNT(*) FROM "Document"
+     WHERE "embedding" IS NOT NULL
+       AND "embeddingModel" = $1
+       AND "deletedAt" IS NULL
+       ${countClause}`,
+    projectId ? [EMBEDDING_MODEL, projectId] : [EMBEDDING_MODEL]
   );
   const total = parseInt(countResult.rows[0].count);
 
@@ -186,17 +197,18 @@ async function hybridSearch(query: string, page: number, limit: number, projectI
   });
 
   // Get semantic search results (top 50 for fusion)
-  const projClause = projectId ? `AND "projectId" = $2` : `AND "projectId" IS NULL`;
+  const projClause = projectId ? `AND "projectId" = $3` : `AND "projectId" IS NULL`;
   const searchStart = Date.now();
   const semanticResult = await pool.query(
     `SELECT id, 1 - ("embedding" <=> $1::vector) as similarity
      FROM "Document"
      WHERE "embedding" IS NOT NULL
+       AND "embeddingModel" = $2
        AND "deletedAt" IS NULL
        ${projClause}
      ORDER BY "embedding" <=> $1::vector
      LIMIT 50`,
-    projectId ? [vectorStr, projectId] : [vectorStr]
+    projectId ? [vectorStr, EMBEDDING_MODEL, projectId] : [vectorStr, EMBEDDING_MODEL]
   );
   logApiCall({
     type: "vector-search",

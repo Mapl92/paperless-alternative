@@ -40,7 +40,7 @@ const DEFAULT_OCR_PROMPT =
   "Du bist ein striktes OCR-System. Deine EINZIGE Aufgabe ist es, den Text abzuschreiben, der tatsächlich sichtbar auf dem Bild steht. WICHTIG: Erfinde NIEMALS Text, der nicht auf dem Bild zu sehen ist. Halluziniere NICHT. Wenn du einen Bereich nicht lesen kannst, schreibe [unleserlich]. Gib den Text exakt so wieder, wie er auf dem Dokument erscheint — Zeile für Zeile, mit der originalen Struktur.";
 
 export const DEFAULT_AI_SETTINGS: AISettings = {
-  model: "openai/gpt-4.1-mini",
+  model: "openai/gpt-5.6-luna",
   classifyPrompt: DEFAULT_CLASSIFY_PROMPT,
   ocrPrompt: DEFAULT_OCR_PROMPT,
   ocrPageLimit: 5,

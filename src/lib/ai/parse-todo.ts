@@ -34,8 +34,12 @@ Antworte NUR mit gültigem JSON:
           content: text,
         },
       ],
-      "google/gemini-2.5-flash-lite",
-      "todo-parse"
+      {
+        model: "openai/gpt-5.6-luna",
+        action: "todo-parse",
+        reasoningEffort: "none",
+        maxTokens: 512,
+      }
     );
 
     const cleaned = response.content.replace(/```json\n?|\n?```/g, "").trim();

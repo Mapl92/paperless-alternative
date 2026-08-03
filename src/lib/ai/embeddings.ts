@@ -5,17 +5,47 @@
 import { pool } from "@/lib/db/prisma";
 import { logApiCall } from "@/lib/logging";
 
+export const EMBEDDING_MODEL = "gemini-embedding-2";
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
-
+  `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
 const EMBEDDING_DIMENSIONS = 768;
+const MAX_TEXT_CHARS = 24_000;
 
-/**
- * Generate an embedding vector using Gemini gemini-embedding-001 (reduced to 768 dimensions).
- * Returns null on failure instead of throwing.
- */
-export async function generateEmbedding(
-  text: string
+interface GenerateEmbeddingOptions {
+  throwOnRateLimit?: boolean;
+}
+
+export class EmbeddingRateLimitError extends Error {
+  constructor(
+    message: string,
+    public readonly retryAfterMs: number | null
+  ) {
+    super(message);
+    this.name = "EmbeddingRateLimitError";
+  }
+}
+
+function parseRetryAfterMs(response: Response, errorBody: unknown): number | null {
+  const header = response.headers.get("retry-after");
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+
+    const date = Date.parse(header);
+    if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  }
+
+  const serialized = JSON.stringify(errorBody);
+  const match = serialized.match(/(?:retryDelay|retry in)[^0-9]*([0-9.]+)s/i);
+  if (!match) return null;
+  const seconds = Number(match[1]);
+  return Number.isFinite(seconds) ? Math.max(0, seconds * 1000) : null;
+}
+
+async function requestEmbedding(
+  text: string,
+  action: "embedding" | "query-embedding",
+  options: GenerateEmbeddingOptions
 ): Promise<number[] | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -23,22 +53,18 @@ export async function generateEmbedding(
     return null;
   }
 
-  // Gemini has a limit of ~2048 tokens, truncate long texts
-  const truncated = text.slice(0, 8000);
-
   const start = Date.now();
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
-    let res: Response;
+    let response: Response;
     try {
-      res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: { parts: [{ text: truncated }] },
-          taskType: "RETRIEVAL_DOCUMENT",
+          content: { parts: [{ text: text.slice(0, MAX_TEXT_CHARS) }] },
           outputDimensionality: EMBEDDING_DIMENSIONS,
         }),
         signal: controller.signal,
@@ -49,37 +75,53 @@ export async function generateEmbedding(
 
     const durationMs = Date.now() - start;
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("Gemini embedding API error:", res.status, err);
+    if (!response.ok) {
+      const rawError = await response.text();
+      let parsedError: unknown = rawError;
+      try {
+        parsedError = JSON.parse(rawError);
+      } catch {
+        // Keep the raw response for logging.
+      }
+
       logApiCall({
         type: "gemini-embedding",
-        action: "embedding",
-        model: "gemini-embedding-001",
+        action,
+        model: EMBEDDING_MODEL,
         durationMs,
         status: "error",
-        error: `${res.status} - ${err.slice(0, 500)}`,
+        error: `${response.status} - ${rawError.slice(0, 500)}`,
       });
+
+      if (response.status === 429 && options.throwOnRateLimit) {
+        throw new EmbeddingRateLimitError(
+          "Gemini-Embedding-Limit erreicht",
+          parseRetryAfterMs(response, parsedError)
+        );
+      }
+
+      console.error("Gemini embedding API error:", response.status, rawError);
       return null;
     }
 
-    const data = await res.json();
+    const data = await response.json();
     logApiCall({
       type: "gemini-embedding",
-      action: "embedding",
-      model: "gemini-embedding-001",
+      action,
+      model: EMBEDDING_MODEL,
       durationMs,
       status: "success",
     });
     return data.embedding?.values ?? null;
   } catch (error) {
-    const durationMs = Date.now() - start;
+    if (error instanceof EmbeddingRateLimitError) throw error;
+
     console.error("Embedding generation failed:", error);
     logApiCall({
       type: "gemini-embedding",
-      action: "embedding",
-      model: "gemini-embedding-001",
-      durationMs,
+      action,
+      model: EMBEDDING_MODEL,
+      durationMs: Date.now() - start,
       status: "error",
       error: error instanceof Error ? error.message : String(error),
     });
@@ -87,93 +129,38 @@ export async function generateEmbedding(
   }
 }
 
-/**
- * Generate an embedding for a search query (uses RETRIEVAL_QUERY task type).
- */
-export async function generateQueryEmbedding(
-  text: string
+/** Generate a retrieval-document embedding using Gemini Embedding 2. */
+export function generateEmbedding(
+  text: string,
+  options: GenerateEmbeddingOptions = {}
 ): Promise<number[] | null> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-
-  const start = Date.now();
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
-    let res: Response;
-    try {
-      res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: { parts: [{ text }] },
-          taskType: "RETRIEVAL_QUERY",
-          outputDimensionality: EMBEDDING_DIMENSIONS,
-        }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    const durationMs = Date.now() - start;
-
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("Gemini query embedding error:", res.status, err);
-      logApiCall({
-        type: "gemini-embedding",
-        action: "query-embedding",
-        model: "gemini-embedding-001",
-        durationMs,
-        status: "error",
-        error: `${res.status} - ${err.slice(0, 500)}`,
-      });
-      return null;
-    }
-
-    const data = await res.json();
-    logApiCall({
-      type: "gemini-embedding",
-      action: "query-embedding",
-      model: "gemini-embedding-001",
-      durationMs,
-      status: "success",
-    });
-    return data.embedding?.values ?? null;
-  } catch (error) {
-    const durationMs = Date.now() - start;
-    console.error("Query embedding failed:", error);
-    logApiCall({
-      type: "gemini-embedding",
-      action: "query-embedding",
-      model: "gemini-embedding-001",
-      durationMs,
-      status: "error",
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+  // Embedding 2 uses prompt prefixes instead of the legacy taskType field.
+  return requestEmbedding(`title: none | text: ${text}`, "embedding", options);
 }
 
-/**
- * Convert embedding array to pgvector string format: [0.1,0.2,...]
- */
+/** Generate an asymmetric search-query embedding in the same vector space. */
+export function generateQueryEmbedding(text: string): Promise<number[] | null> {
+  return requestEmbedding(
+    `task: search result | query: ${text}`,
+    "query-embedding",
+    {}
+  );
+}
+
 export function toVectorString(embedding: number[]): string {
   return `[${embedding.join(",")}]`;
 }
 
-/**
- * Store an embedding for a document using raw SQL (Prisma can't handle vector type).
- */
+/** Store an embedding together with the model that created its vector space. */
 export async function storeEmbedding(
   documentId: string,
   embedding: number[]
 ): Promise<void> {
   const vectorStr = toVectorString(embedding);
   await pool.query(
-    `UPDATE "Document" SET "embedding" = $1::vector WHERE "id" = $2`,
-    [vectorStr, documentId]
+    `UPDATE "Document"
+     SET "embedding" = $1::vector, "embeddingModel" = $2
+     WHERE "id" = $3`,
+    [vectorStr, EMBEDDING_MODEL, documentId]
   );
 }

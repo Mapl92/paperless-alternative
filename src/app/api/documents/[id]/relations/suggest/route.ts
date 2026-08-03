@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool, prisma } from "@/lib/db/prisma";
+import { EMBEDDING_MODEL } from "@/lib/ai/embeddings";
 
 /**
  * GET /api/documents/[id]/relations/suggest — top 5 similar docs via pgvector
@@ -44,11 +45,13 @@ export async function GET(
        WHERE a.id = $1
          AND a.embedding IS NOT NULL
          AND b.embedding IS NOT NULL
+         AND a."embeddingModel" = $3
+         AND b."embeddingModel" = $3
          AND b."deletedAt" IS NULL
          AND b.id != ALL($2::text[])
        ORDER BY a.embedding <=> b.embedding
        LIMIT 5`,
-      [id, excludeIds]
+      [id, excludeIds, EMBEDDING_MODEL]
     );
 
     // Fetch extra metadata for suggested docs

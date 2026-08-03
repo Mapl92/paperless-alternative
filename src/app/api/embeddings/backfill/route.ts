@@ -1,41 +1,86 @@
 // WARNING: This file contains raw SQL queries against the "Document" table (pgvector).
-// Prisma does not type-check these queries. If the Document schema changes
-// (column renames, type changes), these queries MUST be updated manually.
-// Affected: GET (embedding count), runBackfill() — pool.query with "embedding" column.
+// Prisma does not type-check these queries. If the Document schema changes,
+// update the model-aware counts and backfill selection below.
 
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db/prisma";
-import { generateEmbedding, storeEmbedding } from "@/lib/ai/embeddings";
+import {
+  EMBEDDING_MODEL,
+  EmbeddingRateLimitError,
+  generateEmbedding,
+  storeEmbedding,
+} from "@/lib/ai/embeddings";
 
-// #24: Use globalThis so backfill state survives across Next.js route bundle re-instantiations
+type BackfillState = "running" | "cooldown" | "complete" | "error";
+
+interface BackfillProgress {
+  processed: number;
+  failed: number;
+  total: number;
+  batchSize: number;
+  state: BackfillState;
+  cooldownUntil: string | null;
+  message: string | null;
+  rateLimitRetries: number;
+}
+
+// Use globalThis so progress survives Next.js route bundle re-instantiations.
 const g = globalThis as unknown as {
   __backfillRunning?: boolean;
-  __backfillProgress?: { processed: number; failed: number; total: number };
+  __backfillProgress?: BackfillProgress;
 };
 
+const DEFAULT_BATCH_SIZE = 50;
+const MAX_BATCH_SIZE = 100;
+const DEFAULT_REQUEST_DELAY_MS = 4_000;
+const MAX_RATE_LIMIT_RETRIES = 6;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getProgress() {
-  return g.__backfillProgress ?? { processed: 0, failed: 0, total: 0 };
+  return g.__backfillProgress ?? null;
+}
+
+async function getStats() {
+  const result = await pool.query(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (
+         WHERE "embedding" IS NOT NULL AND "embeddingModel" = $1
+       )::int AS embedded,
+       COUNT(*) FILTER (
+         WHERE "embedding" IS NOT NULL
+           AND "embeddingModel" IS DISTINCT FROM $1
+       )::int AS legacy
+     FROM "Document"
+     WHERE "aiProcessed" = true
+       AND "content" IS NOT NULL
+       AND "deletedAt" IS NULL`,
+    [EMBEDDING_MODEL]
+  );
+
+  const row = result.rows[0] as { total: number; embedded: number; legacy: number };
+  return {
+    total: row.total,
+    embedded: row.embedded,
+    legacy: row.legacy,
+    pending: row.total - row.embedded,
+  };
 }
 
 export async function GET() {
-  const [total, embedded] = await Promise.all([
-    prisma.document.count({ where: { aiProcessed: true } }),
-    pool
-      .query(`SELECT COUNT(*) FROM "Document" WHERE "embedding" IS NOT NULL`)
-      .then((r) => parseInt(r.rows[0].count)),
-  ]);
-
+  const stats = await getStats();
   return NextResponse.json({
-    total,
-    embedded,
-    pending: total - embedded,
+    ...stats,
+    model: EMBEDDING_MODEL,
     running: g.__backfillRunning ?? false,
-    progress: g.__backfillRunning ? getProgress() : null,
+    progress: getProgress(),
   });
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   if (g.__backfillRunning) {
     return NextResponse.json(
       { error: "Backfill läuft bereits", progress: getProgress() },
@@ -50,48 +95,134 @@ export async function POST() {
     );
   }
 
+  let requestedBatchSize = DEFAULT_BATCH_SIZE;
+  try {
+    const body = await request.json();
+    if (typeof body.batchSize === "number") requestedBatchSize = body.batchSize;
+  } catch {
+    // An empty body uses the safe default batch size.
+  }
+
+  const batchSize = Math.min(
+    MAX_BATCH_SIZE,
+    Math.max(1, Math.floor(requestedBatchSize))
+  );
+
   g.__backfillRunning = true;
-  g.__backfillProgress = { processed: 0, failed: 0, total: 0 };
+  g.__backfillProgress = {
+    processed: 0,
+    failed: 0,
+    total: 0,
+    batchSize,
+    state: "running",
+    cooldownUntil: null,
+    message: null,
+    rateLimitRetries: 0,
+  };
 
-  runBackfill().finally(() => {
-    g.__backfillRunning = false;
+  runBackfill(batchSize)
+    .catch((error) => {
+      console.error("Embedding backfill failed:", error);
+      if (g.__backfillProgress) {
+        g.__backfillProgress.state = "error";
+        g.__backfillProgress.message =
+          error instanceof Error ? error.message : "Unbekannter Backfill-Fehler";
+      }
+    })
+    .finally(() => {
+      g.__backfillRunning = false;
+    });
+
+  return NextResponse.json({
+    message: `Embedding-Batch mit maximal ${batchSize} Dokumenten gestartet`,
+    batchSize,
   });
-
-  return NextResponse.json({ message: "Backfill gestartet" });
 }
 
-async function runBackfill() {
+async function runBackfill(batchSize: number) {
   const result = await pool.query(
     `SELECT d."id", d."title", d."content", d."aiSummary"
      FROM "Document" d
-     WHERE d."embedding" IS NULL AND d."aiProcessed" = true AND d."content" IS NOT NULL
-     ORDER BY d."createdAt" DESC`
+     WHERE d."aiProcessed" = true
+       AND d."content" IS NOT NULL
+       AND d."deletedAt" IS NULL
+       AND d."embeddingModel" IS DISTINCT FROM $1
+     ORDER BY d."createdAt" DESC
+     LIMIT $2`,
+    [EMBEDDING_MODEL, batchSize]
   );
 
-  g.__backfillProgress!.total = result.rows.length;
-  console.log(`Backfill: ${result.rows.length} documents to process`);
+  const progress = g.__backfillProgress!;
+  progress.total = result.rows.length;
+  progress.message = result.rows.length
+    ? `${result.rows.length} Dokumente in diesem Batch`
+    : "Keine ausstehenden Dokumente";
+
+  const requestDelayMs = Math.max(
+    250,
+    Number(process.env.EMBEDDING_BACKFILL_DELAY_MS) || DEFAULT_REQUEST_DELAY_MS
+  );
 
   for (const row of result.rows) {
-    try {
-      const text = `${row.title}\n${row.aiSummary || ""}\n${row.content}`;
-      const embedding = await generateEmbedding(text);
+    let completed = false;
 
-      if (embedding) {
-        await storeEmbedding(row.id, embedding);
-        g.__backfillProgress!.processed++;
-      } else {
-        g.__backfillProgress!.failed++;
+    while (!completed) {
+      try {
+        progress.state = "running";
+        progress.cooldownUntil = null;
+        progress.message = "Embedding wird erzeugt";
+
+        const text = `${row.title}\n${row.aiSummary || ""}\n${row.content}`;
+        const embedding = await generateEmbedding(text, { throwOnRateLimit: true });
+
+        if (embedding) {
+          await storeEmbedding(row.id, embedding);
+          progress.processed++;
+        } else {
+          progress.failed++;
+        }
+        // Only consecutive rate-limit responses should trip the safety stop.
+        progress.rateLimitRetries = 0;
+        completed = true;
+      } catch (error) {
+        if (!(error instanceof EmbeddingRateLimitError)) throw error;
+
+        progress.rateLimitRetries++;
+        if (progress.rateLimitRetries > MAX_RATE_LIMIT_RETRIES) {
+          progress.state = "error";
+          progress.message =
+            "Gemini-Limit wiederholt erreicht. Der Batch wurde sicher angehalten und kann später fortgesetzt werden.";
+          return;
+        }
+
+        const fallbackMs = Math.min(
+          60 * 60 * 1000,
+          60_000 * 2 ** (progress.rateLimitRetries - 1)
+        );
+        const cooldownMs = Math.max(
+          5_000,
+          error.retryAfterMs ?? fallbackMs
+        );
+        const jitterMs = Math.floor(Math.random() * 2_000);
+        const resumeAt = new Date(Date.now() + cooldownMs + jitterMs);
+
+        progress.state = "cooldown";
+        progress.cooldownUntil = resumeAt.toISOString();
+        progress.message =
+          "Gemini-Nutzungslimit erreicht. Der Backfill wartet und setzt danach automatisch fort.";
+
+        await sleep(cooldownMs + jitterMs);
       }
+    }
 
-      // Rate limit: ~10 requests/second to stay within Gemini free tier
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    } catch (error) {
-      console.error(`Backfill failed for document ${row.id}:`, error);
-      g.__backfillProgress!.failed++;
+    if (progress.processed + progress.failed < progress.total) {
+      await sleep(requestDelayMs);
     }
   }
 
-  console.log(
-    `Backfill complete: ${g.__backfillProgress!.processed} processed, ${g.__backfillProgress!.failed} failed`
-  );
+  progress.state = "complete";
+  progress.cooldownUntil = null;
+  progress.message = result.rows.length
+    ? `Batch abgeschlossen: ${progress.processed} erfolgreich, ${progress.failed} fehlgeschlagen.`
+    : "Alle Dokumente verwenden bereits das aktuelle Embedding-Modell.";
 }

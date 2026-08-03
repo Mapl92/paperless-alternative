@@ -31,6 +31,27 @@ const EMAIL_PRESETS: Record<string, { host: string; port: number }> = {
   webde: { host: "imap.web.de", port: 993 },
 };
 
+interface EmbeddingProgress {
+  processed: number;
+  failed: number;
+  total: number;
+  batchSize: number;
+  state: "running" | "cooldown" | "complete" | "error";
+  cooldownUntil: string | null;
+  message: string | null;
+  rateLimitRetries: number;
+}
+
+interface EmbeddingStats {
+  total: number;
+  embedded: number;
+  legacy: number;
+  pending: number;
+  model: string;
+  running: boolean;
+  progress: EmbeddingProgress | null;
+}
+
 export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savingAI, setSavingAI] = useState(false);
@@ -74,7 +95,15 @@ export default function SettingsPage() {
   const [logoVersion, setLogoVersion] = useState(0);
 
   // Embeddings
-  const [embeddingStats, setEmbeddingStats] = useState({ total: 0, embedded: 0, pending: 0, running: false, progress: null as { processed: number; failed: number; total: number } | null });
+  const [embeddingStats, setEmbeddingStats] = useState<EmbeddingStats>({
+    total: 0,
+    embedded: 0,
+    legacy: 0,
+    pending: 0,
+    model: "gemini-embedding-2",
+    running: false,
+    progress: null,
+  });
   const [embeddingPolling, setEmbeddingPolling] = useState(false);
 
   const fetchEmbeddingStats = async () => {
@@ -456,11 +485,11 @@ export default function SettingsPage() {
                   id="aiModel"
                   value={aiModel}
                   onChange={(e) => setAiModel(e.target.value)}
-                  placeholder="openai/gpt-4.1-mini"
+                  placeholder="openai/gpt-5.6-luna"
                   className="mt-1"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  z.B. openai/gpt-4.1-mini, google/gemini-2.5-flash, anthropic/claude-sonnet-4
+                  Standard: openai/gpt-5.6-luna. Reasoning: OCR ohne, Klassifikation niedrig, Verträge mittel.
                 </p>
               </div>
               <Separator />
@@ -547,17 +576,21 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Embeddings ermöglichen die semantische Suche. Dokumente ohne Embedding werden nur per Textsuche gefunden.
+                Zielmodell: <code>{embeddingStats.model}</code>. Während der schrittweisen Migration werden nur Vektoren dieses Modells semantisch verglichen; übrige Dokumente bleiben über die Textsuche auffindbar.
               </p>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center p-4 rounded-lg bg-muted">
                   <p className="text-2xl font-bold">{embeddingStats.total}</p>
                   <p className="text-xs text-muted-foreground">Dokumente gesamt</p>
                 </div>
                 <div className="text-center p-4 rounded-lg bg-green-500/10">
                   <p className="text-2xl font-bold text-green-600">{embeddingStats.embedded}</p>
-                  <p className="text-xs text-muted-foreground">Mit Embedding</p>
+                  <p className="text-xs text-muted-foreground">Aktuelles Modell</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-blue-500/10">
+                  <p className="text-2xl font-bold text-blue-600">{embeddingStats.legacy}</p>
+                  <p className="text-xs text-muted-foreground">Altes Modell</p>
                 </div>
                 <div className="text-center p-4 rounded-lg bg-orange-500/10">
                   <p className="text-2xl font-bold text-orange-600">{embeddingStats.pending}</p>
@@ -568,7 +601,7 @@ export default function SettingsPage() {
               {embeddingStats.total > 0 && (
                 <div>
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>Abdeckung</span>
+                    <span>Abdeckung mit {embeddingStats.model}</span>
                     <span>{embeddingStats.total > 0 ? Math.round((embeddingStats.embedded / embeddingStats.total) * 100) : 0}%</span>
                   </div>
                   <Progress value={embeddingStats.total > 0 ? (embeddingStats.embedded / embeddingStats.total) * 100 : 0} />
@@ -579,7 +612,11 @@ export default function SettingsPage() {
                 <div className="rounded-lg border p-4 space-y-2">
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm font-medium">Backfill läuft...</span>
+                    <span className="text-sm font-medium">
+                      {embeddingStats.progress.state === "cooldown"
+                        ? "Rate-Limit-Cool-down"
+                        : "Embedding-Batch läuft..."}
+                    </span>
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
                     <span>{embeddingStats.progress.processed + embeddingStats.progress.failed} / {embeddingStats.progress.total}</span>
@@ -588,6 +625,20 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <Progress value={embeddingStats.progress.total > 0 ? ((embeddingStats.progress.processed + embeddingStats.progress.failed) / embeddingStats.progress.total) * 100 : 0} />
+                  {embeddingStats.progress.message && (
+                    <p className="text-xs text-muted-foreground">{embeddingStats.progress.message}</p>
+                  )}
+                  {embeddingStats.progress.cooldownUntil && (
+                    <p className="text-xs text-orange-600">
+                      Automatische Fortsetzung gegen {new Date(embeddingStats.progress.cooldownUntil).toLocaleTimeString("de-DE")} Uhr
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!embeddingStats.running && embeddingStats.progress?.message && (
+                <div className={`rounded-lg border p-3 text-sm ${embeddingStats.progress.state === "error" ? "border-red-500/50 text-red-600" : "text-muted-foreground"}`}>
+                  {embeddingStats.progress.message}
                 </div>
               )}
 
@@ -595,13 +646,17 @@ export default function SettingsPage() {
                 <Button
                   onClick={async () => {
                     try {
-                      const res = await fetch("/api/embeddings/backfill", { method: "POST" });
+                      const res = await fetch("/api/embeddings/backfill", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ batchSize: 50 }),
+                      });
+                      const data = await res.json();
                       if (res.ok) {
-                        toast.success("Embedding-Generierung gestartet");
+                        toast.success(data.message || "Embedding-Generierung gestartet");
                         setEmbeddingPolling(true);
                         await fetchEmbeddingStats();
                       } else {
-                        const data = await res.json();
                         toast.error(data.error || "Fehler beim Starten");
                       }
                     } catch {
@@ -616,7 +671,7 @@ export default function SettingsPage() {
                     <RefreshCw className="mr-2 h-4 w-4" />
                   )}
                   {embeddingStats.pending > 0
-                    ? `${embeddingStats.pending} fehlende Embeddings generieren`
+                    ? `Nächsten Batch starten (${Math.min(50, embeddingStats.pending)} von ${embeddingStats.pending})`
                     : "Alle Dokumente haben Embeddings"}
                 </Button>
                 <Button

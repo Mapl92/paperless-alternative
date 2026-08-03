@@ -29,8 +29,12 @@ export async function performOCR(
         ],
       },
     ],
-    model,
-    "ocr"
+    {
+      model,
+      action: "ocr",
+      reasoningEffort: "none",
+      maxTokens: 4096,
+    }
   );
 
   return response.content;

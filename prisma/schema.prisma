@@ -30,6 +30,7 @@ model Document {
   mimeType        String    @default("application/pdf")
   deletedAt       DateTime?
   projectId       String?
+  embeddingModel  String?
 
   correspondent Correspondent? @relation(fields: [correspondentId], references: [id], onDelete: SetNull)
   documentType  DocumentType?  @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
@@ -51,6 +52,7 @@ model Document {
   @@index([createdAt])
   @@index([title])
   @@index([projectId])
+  @@index([embeddingModel])
 }
 
 model Project {

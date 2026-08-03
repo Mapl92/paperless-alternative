@@ -46,8 +46,12 @@ Bestehende Dokumenttypen: ${JSON.stringify(existingDocumentTypes)}`;
       { role: "system", content: systemPrompt },
       { role: "user", content: `Analysiere dieses Dokument:\n\n${ocrText.slice(0, 8000)}` },
     ],
-    aiSettings.model,
-    "classify"
+    {
+      model: aiSettings.model,
+      action: "classify",
+      reasoningEffort: "low",
+      maxTokens: 4096,
+    }
   );
 
   try {
