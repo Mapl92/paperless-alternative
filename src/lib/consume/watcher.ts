@@ -1,4 +1,4 @@
-import { readdir, readFile, unlink, rename } from "fs/promises";
+import { open, readdir, readFile, unlink, rename, stat } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import { getConsumeDir } from "@/lib/files/storage";
@@ -7,6 +7,14 @@ import { processDocument } from "@/lib/ai/process-document";
 import { prisma } from "@/lib/db/prisma";
 
 const SCAN_INTERVAL_MS = 30_000;
+// Scanner und Netzwerkkopien schreiben Dateien nach und nach (der Brother-Scanner
+// Seite für Seite, das Seitenverzeichnis erst am Ende). Eine Datei wird erst
+// übernommen, wenn sie so lange unverändert ist und – bei PDFs – vollständig
+// (%%EOF am Ende). Sonst landeten halbe Dateien in DocuMind (29.10.2026).
+const MIN_UNCHANGED_MS = 60_000;
+// Bleibt eine PDF so lange unvollständig, wird sie trotzdem verarbeitet
+// (kaputte Datei statt ewig wartend).
+const INCOMPLETE_PDF_MAX_WAIT_MS = 30 * 60_000;
 const SUPPORTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".webp", ".bmp", ".gif"];
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -23,7 +31,37 @@ const EXT_TO_MIME: Record<string, string> = {
 
 // #18: Use globalThis so the flag is shared across Next.js route bundles
 // (avoids two scan cycles running simultaneously if modules are instantiated twice)
-const g = globalThis as unknown as { __consumeRunning?: boolean };
+const g = globalThis as unknown as { __consumeRunning?: boolean; __consumeWaiting?: Set<string> };
+
+/** PDF-Dateiende (%%EOF) in den letzten Bytes vorhanden? */
+async function hasPdfEnd(filePath: string, size: number): Promise<boolean> {
+  const length = Math.min(size, 2048);
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, size - length);
+    return buffer.includes("%%EOF");
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Ist die Datei fertig geschrieben? */
+async function isReady(filePath: string, filename: string): Promise<boolean> {
+  const info = await stat(filePath);
+  const age = Date.now() - info.mtimeMs;
+  if (age < MIN_UNCHANGED_MS) return false;
+  if (!filename.toLowerCase().endsWith(".pdf") || (await hasPdfEnd(filePath, info.size))) return true;
+  const waiting = (g.__consumeWaiting ??= new Set());
+  if (age < INCOMPLETE_PDF_MAX_WAIT_MS) {
+    if (!waiting.has(filename)) console.log(`[consume] Waiting for incomplete PDF: ${filename}`);
+    waiting.add(filename);
+    return false;
+  }
+  console.warn(`[consume] PDF still incomplete after ${INCOMPLETE_PDF_MAX_WAIT_MS / 60_000} min, processing anyway: ${filename}`);
+  waiting.delete(filename);
+  return true;
+}
 
 async function scanConsumeDir() {
   if (g.__consumeRunning) return;
@@ -44,6 +82,13 @@ async function scanConsumeDir() {
 
     for (const filename of files) {
       const filePath = join(consumeDir, filename);
+
+      try {
+        if (!(await isReady(filePath, filename))) continue;
+      } catch {
+        continue; // Datei inzwischen weg
+      }
+      g.__consumeWaiting?.delete(filename);
 
       // Rename to .processing to prevent double pickup
       const processingPath = filePath + ".processing";
