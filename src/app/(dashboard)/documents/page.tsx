@@ -19,7 +19,14 @@ import {
 import { DocumentGrid } from "@/components/documents/document-grid";
 import { FilterSidebar } from "@/components/documents/filter-sidebar";
 import { DateFilterBar } from "@/components/documents/date-filter-bar";
-import { Bookmark, Search } from "lucide-react";
+import { Bookmark, Search, SlidersHorizontal } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { toast } from "sonner";
 import type { DateField, DatePreset } from "@/components/documents/filter-sidebar";
@@ -102,6 +109,8 @@ function DocumentsContent() {
   const addedDateTo = dateField === "addedAt" && effectiveDates.to ? effectiveDates.to.toISOString() : undefined;
 
   const [saveOpen, setSaveOpen] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const activeFilterCount = [tagId, correspondentId, documentTypeId].filter(Boolean).length;
   const [saveName, setSaveName] = useState("");
   const saveInputRef = useRef<HTMLInputElement>(null);
 
@@ -173,8 +182,9 @@ function DocumentsContent() {
     <div className="p-4 md:p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-4">Dokumente</h1>
-        <div className="flex gap-3 items-center">
-          <div className="relative max-w-md flex-1">
+        {/* On a phone the search field takes its own row; sort, filter and save follow below */}
+        <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+          <div className="relative w-full sm:w-auto sm:max-w-md sm:flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Dokumente durchsuchen..."
@@ -195,6 +205,21 @@ function DocumentsContent() {
               ))}
             </SelectContent>
           </Select>
+          {/* Below lg the filter column is hidden; this opens the same filters in a sheet */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="lg:hidden"
+            onClick={() => setFilterSheetOpen(true)}
+          >
+            <SlidersHorizontal className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Filter</span>
+            {activeFilterCount > 0 && (
+              <span className="ml-1.5 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
           <Popover open={saveOpen} onOpenChange={setSaveOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="icon" title="Ansicht speichern">
@@ -229,6 +254,41 @@ function DocumentsContent() {
           onDatePresetChange={setDatePreset}
         />
       </div>
+
+      <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+        <SheetContent side="left" className="w-[85vw] max-w-sm gap-0 lg:hidden">
+          <SheetHeader>
+            <SheetTitle>Filter</SheetTitle>
+            <SheetDescription className="sr-only">
+              Dokumente nach Ansicht, Tag, Korrespondent oder Dokumenttyp filtern
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
+            <FilterSidebar
+              variant="sheet"
+              selectedTagId={tagId}
+              selectedCorrespondentId={correspondentId}
+              selectedDocumentTypeId={documentTypeId}
+              onTagSelect={(id) => {
+                setTagId(id);
+                setFilterSheetOpen(false);
+              }}
+              onCorrespondentSelect={(id) => {
+                setCorrespondentId(id);
+                setFilterSheetOpen(false);
+              }}
+              onDocumentTypeSelect={(id) => {
+                setDocumentTypeId(id);
+                setFilterSheetOpen(false);
+              }}
+              onApplyView={(view) => {
+                applyView(view);
+                setFilterSheetOpen(false);
+              }}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <div className="flex gap-6">
         <FilterSidebar

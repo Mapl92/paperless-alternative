@@ -36,6 +36,8 @@ interface FilterSidebarProps {
   onCorrespondentSelect: (id: string | undefined) => void;
   onDocumentTypeSelect: (id: string | undefined) => void;
   onApplyView?: (view: SavedViewData) => void;
+  /** "sidebar": fixed column on large screens. "sheet": full width, for the mobile filter sheet. */
+  variant?: "sidebar" | "sheet";
 }
 
 interface TagData {
@@ -65,6 +67,7 @@ export function FilterSidebar({
   onCorrespondentSelect,
   onDocumentTypeSelect,
   onApplyView,
+  variant = "sidebar",
 }: FilterSidebarProps) {
   const [tags, setTags] = useState<TagData[]>([]);
   const [correspondents, setCorrespondents] = useState<CorrespondentData[]>([]);
@@ -103,8 +106,8 @@ export function FilterSidebar({
     selectedTagId || selectedCorrespondentId || selectedDocumentTypeId;
 
   return (
-    <div className="w-60 shrink-0 hidden lg:block">
-      <ScrollArea className="h-[calc(100vh-8rem)]">
+    <div className={variant === "sheet" ? "min-h-0 flex-1" : "w-60 shrink-0 hidden lg:block"}>
+      <ScrollArea className={variant === "sheet" ? "h-full" : "h-[calc(100vh-8rem)]"}>
         <div className="pr-4 space-y-4">
           {hasActiveFilters && (
             <Button

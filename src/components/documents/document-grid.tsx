@@ -197,11 +197,11 @@ export function DocumentGrid({
   return (
     <div>
       {/* Selection controls */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           {total} Dokumente
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {selectMode ? (
             <>
               <Button variant="outline" size="sm" onClick={selectAll}>

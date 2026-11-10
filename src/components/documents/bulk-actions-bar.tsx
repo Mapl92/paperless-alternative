@@ -242,8 +242,9 @@ export function BulkActionsBar({
       </DialogContent>
     </Dialog>
 
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 p-3 shadow-lg">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+    {/* On phones the bottom navigation occupies the bottom edge, so sit above it */}
+    <div className="fixed bottom-16 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 p-3 shadow-lg md:bottom-0">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium">
             {selectedCount} ausgewählt
@@ -254,7 +255,7 @@ export function BulkActionsBar({
           </Button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Add Tags */}
           <TagPopover
             label="Tags +"

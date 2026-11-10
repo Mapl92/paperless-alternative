@@ -271,7 +271,9 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold mb-6">Einstellungen</h1>
 
       <Tabs defaultValue="general">
-        <TabsList>
+        {/* Eleven tabs do not fit a phone; let the row scroll instead of widening the page */}
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+        <TabsList className="w-max">
           <TabsTrigger value="branding">Personalisierung</TabsTrigger>
           <TabsTrigger value="general">Allgemein</TabsTrigger>
           <TabsTrigger value="management">Verwaltung</TabsTrigger>
@@ -284,6 +286,7 @@ export default function SettingsPage() {
           <TabsTrigger value="activity" onClick={() => { if (auditLogs.length === 0) fetchAuditLogs(1, auditEntityType, auditAction); }}>Aktivitätslog</TabsTrigger>
           <TabsTrigger value="security">Sicherheit</TabsTrigger>
         </TabsList>
+        </div>
 
         {/* Branding */}
         <TabsContent value="branding" className="space-y-4 mt-4">

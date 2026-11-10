@@ -840,12 +840,13 @@ export default function DocumentDetailPage({
   return (
     <div className="p-4 md:p-6">
       {/* Back button + actions */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Zurück
         </Button>
-        <div className="flex gap-2">
+        {/* Eight actions do not fit one row on a phone or a narrow window */}
+        <div className="flex flex-wrap justify-end gap-2">
           {doc.archiveFile ? (
             // The preview shows the archive version (signed PDF, or the PDF made
             // from an uploaded image). Offer that one first, the upload second.
