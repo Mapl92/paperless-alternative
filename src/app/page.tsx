@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
@@ -23,6 +23,8 @@ import {
   User,
 } from "lucide-react";
 import { getPriority } from "@/lib/constants/todo";
+import { ErrorState } from "@/components/error-state";
+import { ApiError, fetchJson } from "@/lib/api-fetch";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -108,20 +110,52 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [pendingReminders, setPendingReminders] = useState<PendingReminder[]>([]);
 
-  useEffect(() => {
-    fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+  const [loadError, setLoadError] = useState(false);
 
-    fetch("/api/reminders/pending")
-      .then((r) => r.json())
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      setData(await fetchJson<DashboardData>("/api/dashboard"));
+    } catch (error) {
+      // 401 is already on its way to the login page; keep the skeletons up.
+      if (error instanceof ApiError && error.status === 401) return;
+      console.error(error);
+      setData(null);
+      setLoadError(true);
+    }
+    setLoading(false);
+
+    fetchJson<{ reminders?: PendingReminder[] }>("/api/reminders/pending")
       .then((d) => setPendingReminders(d.reminders ?? []))
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   const maxTrend = data ? Math.max(...data.monthlyTrend.map((m) => m.count), 1) : 1;
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen overflow-hidden">
+        <div className="hidden md:flex">
+          <Sidebar />
+        </div>
+        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+          <ErrorState
+            title="Die Übersicht konnte nicht geladen werden"
+            description="Der Server hat nicht wie erwartet geantwortet."
+            onRetry={load}
+            backHref="/documents"
+            backLabel="Zu den Dokumenten"
+          />
+        </main>
+        <MobileNav />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

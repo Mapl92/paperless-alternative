@@ -5,6 +5,8 @@ import { DocumentCard } from "./document-card";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/error-state";
+import { ApiError, fetchJson } from "@/lib/api-fetch";
 import { ChevronLeft, ChevronRight, CheckSquare, Square, X } from "lucide-react";
 
 interface DocumentGridProps {
@@ -53,6 +55,7 @@ export function DocumentGrid({
 }: DocumentGridProps) {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -77,13 +80,21 @@ export function DocumentGrid({
     params.set("sortOrder", sortOrder);
 
     try {
-      const res = await fetch(`/api/documents?${params}`);
-      const data = await res.json();
-      setDocuments(data.documents);
-      setTotalPages(data.totalPages);
-      setTotal(data.total);
+      const data = await fetchJson<{
+        documents: DocumentData[];
+        totalPages: number;
+        total: number;
+      }>(`/api/documents?${params}`);
+      setDocuments(data.documents ?? []);
+      setTotalPages(data.totalPages ?? 1);
+      setTotal(data.total ?? 0);
+      setLoadError(false);
     } catch (err) {
-      console.error("Failed to fetch documents:", err);
+      // 401 is already on its way to the login page.
+      if (!(err instanceof ApiError && err.status === 401)) {
+        console.error("Failed to fetch documents:", err);
+        setLoadError(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -155,6 +166,16 @@ export function DocumentGrid({
           </div>
         ))}
       </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <ErrorState
+        title="Dokumente konnten nicht geladen werden"
+        description="Der Server hat nicht wie erwartet geantwortet."
+        onRetry={fetchDocuments}
+      />
     );
   }
 

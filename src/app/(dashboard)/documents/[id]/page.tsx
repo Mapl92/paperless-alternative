@@ -18,6 +18,14 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ErrorState } from "@/components/error-state";
+import { ApiError, fetchJson } from "@/lib/api-fetch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
@@ -123,6 +131,8 @@ export default function DocumentDetailPage({
   const { id } = use(params);
   const [doc, setDoc] = useState<DocumentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<"not-found" | "error" | null>(null);
+  const [previewVersion, setPreviewVersion] = useState(0);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const router = useRouter();
@@ -305,11 +315,17 @@ export default function DocumentDetailPage({
   function handleRelSearch(q: string) {
     setRelSearchQuery(q);
     if (relSearchTimer.current) clearTimeout(relSearchTimer.current);
-    if (q.length < 2) { setRelSearchResults([]); return; }
+    if (q.length < 2) {
+      setRelSearchResults([]);
+      // A pending search was just cancelled; nothing will reset the spinner otherwise.
+      setRelSearching(false);
+      return;
+    }
     setRelSearching(true);
     relSearchTimer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/documents?q=${encodeURIComponent(q)}&limit=8`);
+        // The list endpoint reads its search term from "search".
+        const res = await fetch(`/api/documents?search=${encodeURIComponent(q)}&limit=8`);
         if (res.ok) {
           const data = await res.json();
           const docs = (data.documents ?? data).filter(
@@ -485,16 +501,25 @@ export default function DocumentDetailPage({
     return false;
   }
 
-  useEffect(() => {
-    fetch(`/api/documents/${id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setDoc(data);
-        setEditTitle(data.title);
-      })
-      .catch(() => toast.error("Dokument nicht gefunden"))
-      .finally(() => setLoading(false));
+  const loadDocument = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await fetchJson<DocumentDetail>(`/api/documents/${id}`);
+      setDoc(data);
+      setEditTitle(data.title);
+    } catch (error) {
+      // 401 is already on its way to the login page; keep the skeleton up.
+      if (error instanceof ApiError && error.status === 401) return;
+      setDoc(null);
+      setLoadError(error instanceof ApiError && error.status === 404 ? "not-found" : "error");
+    }
+    setLoading(false);
   }, [id]);
+
+  useEffect(() => {
+    loadDocument();
+  }, [loadDocument]);
 
   async function handleSaveTitle() {
     if (!doc || editTitle === doc.title) {
@@ -790,10 +815,21 @@ export default function DocumentDetailPage({
   }
 
   if (!doc) {
-    return (
-      <div className="p-6 text-center">
-        <p>Dokument nicht gefunden</p>
-      </div>
+    return loadError === "error" ? (
+      <ErrorState
+        title="Dokument konnte nicht geladen werden"
+        description="Der Server hat nicht wie erwartet geantwortet."
+        onRetry={loadDocument}
+        backHref="/documents"
+        backLabel="Zu den Dokumenten"
+      />
+    ) : (
+      <ErrorState
+        title="Dokument nicht gefunden"
+        description="Es wurde gelöscht oder der Link ist veraltet."
+        backHref="/documents"
+        backLabel="Zu den Dokumenten"
+      />
     );
   }
 
@@ -810,15 +846,37 @@ export default function DocumentDetailPage({
           Zurück
         </Button>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/api/documents/${id}/file?type=original`}
-              download={`${doc.title}.pdf`}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </a>
-          </Button>
+          {doc.archiveFile ? (
+            // The preview shows the archive version (signed PDF, or the PDF made
+            // from an uploaded image). Offer that one first, the upload second.
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <a href={`/api/documents/${id}/file?type=archive&download=1`}>
+                    Angezeigte Fassung (PDF)
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href={`/api/documents/${id}/file?type=original&download=1`}>
+                    Original{doc.mimeType?.startsWith("image/") ? " (Bild)" : ""}
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button variant="outline" size="sm" asChild>
+              <a href={`/api/documents/${id}/file?type=original&download=1`}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </a>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => setShareOpen(true)}>
             <Share2 className="mr-2 h-4 w-4" />
             Teilen
@@ -883,7 +941,8 @@ export default function DocumentDetailPage({
           <Card>
             <CardContent className="p-0">
               <iframe
-                src={`/api/documents/${id}/file?type=${doc.archiveFile ? "archive" : "original"}`}
+                // previewVersion changes after signing so the viewer loads the new file
+                src={`/api/documents/${id}/file?type=${doc.archiveFile ? "archive" : "original"}&v=${previewVersion}`}
                 className="w-full h-[calc(100vh-12rem)] rounded-lg"
                 title="PDF Vorschau"
               />
@@ -2093,12 +2152,13 @@ export default function DocumentDetailPage({
         open={signingOpen}
         onOpenChange={setSigningOpen}
         onSigned={() => {
-          // Refresh document to get updated archiveFile
-          fetch(`/api/documents/${id}`)
-            .then((r) => r.json())
+          // Refresh document to get updated archiveFile, then reload the preview
+          fetchJson<DocumentDetail>(`/api/documents/${id}`)
             .then((data) => {
               setDoc(data);
-            });
+              setPreviewVersion((v) => v + 1);
+            })
+            .catch(() => toast.error("Dokument konnte nicht neu geladen werden"));
         }}
       />
     </div>
