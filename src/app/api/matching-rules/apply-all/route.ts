@@ -10,7 +10,7 @@ export async function POST() {
     }
 
     const docs = await prisma.document.findMany({
-      where: { aiProcessed: true },
+      where: { aiProcessed: true, deletedAt: null },
       select: { id: true },
     });
 

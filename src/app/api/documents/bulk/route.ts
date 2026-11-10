@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { deleteFile } from "@/lib/files/storage";
+import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { logAuditEvent } from "@/lib/audit";
 
 // #16: Limit bulk operations to prevent DoS via oversized payloads
@@ -111,17 +111,8 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // #11: Delete DB records first — if file deletion fails, data is still consistent
-        await prisma.document.deleteMany({
-          where: { id: { in: documents.map((d) => d.id) } },
-        });
-
-        // Then delete files (best-effort)
-        for (const doc of documents) {
-          if (doc.originalFile) await deleteFile(doc.originalFile).catch((err) => console.error(`Failed to delete ${doc.originalFile}:`, err));
-          if (doc.archiveFile) await deleteFile(doc.archiveFile).catch((err) => console.error(`Failed to delete ${doc.archiveFile}:`, err));
-          if (doc.thumbnailFile) await deleteFile(doc.thumbnailFile).catch((err) => console.error(`Failed to delete ${doc.thumbnailFile}:`, err));
-        }
+        // #11: DB records first, then only the files no remaining document references
+        await permanentlyDeleteDocuments(documents);
 
         return NextResponse.json({ success: true, count: documents.length });
       }

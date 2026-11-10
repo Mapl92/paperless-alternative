@@ -49,6 +49,16 @@ export async function POST(
         where: { correspondentId: sourceId },
         data: { correspondentId: targetId },
       }),
+      // Rules and contracts follow the documents; otherwise the foreign key
+      // would just blank them when the source is deleted
+      prisma.matchingRule.updateMany({
+        where: { setCorrespondentId: sourceId },
+        data: { setCorrespondentId: targetId },
+      }),
+      prisma.contract.updateMany({
+        where: { correspondentId: sourceId },
+        data: { correspondentId: targetId },
+      }),
       // Delete source correspondent
       prisma.correspondent.delete({ where: { id: sourceId } }),
     ]);

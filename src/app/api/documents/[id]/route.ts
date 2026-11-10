@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { deleteFile } from "@/lib/files/storage";
+import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { logAuditEvent, buildChangesSummary } from "@/lib/audit";
 
 export async function GET(
@@ -170,12 +170,9 @@ export async function DELETE(
         source: "ui",
       });
 
-      // Delete files first (best-effort), then DB record
-      if (document.originalFile) await deleteFile(document.originalFile).catch((err) => console.error(`Failed to delete ${document.originalFile}:`, err));
-      if (document.archiveFile) await deleteFile(document.archiveFile).catch((err) => console.error(`Failed to delete ${document.archiveFile}:`, err));
-      if (document.thumbnailFile) await deleteFile(document.thumbnailFile).catch((err) => console.error(`Failed to delete ${document.thumbnailFile}:`, err));
-
-      await prisma.document.delete({ where: { id } });
+      // Removes the DB record, then only those files no other document still uses.
+      // Two uploads of the same file share one original (named by checksum).
+      await permanentlyDeleteDocuments([document]);
     } else {
       // Soft delete — move to trash
       await prisma.document.update({

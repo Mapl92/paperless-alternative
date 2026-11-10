@@ -72,10 +72,93 @@ export function matchesCondition(
   }
 }
 
+interface RuleInput {
+  name: string;
+  matchField: string;
+  matchOperator: string;
+  matchValue: string;
+  setCorrespondentId: string | null;
+  setDocumentTypeId: string | null;
+  addTagIds: unknown;
+}
+
+interface RuleTarget {
+  title: string;
+  content: string | null;
+  correspondentId: string | null;
+  documentTypeId: string | null;
+}
+
+/**
+ * Work out what the given rules do to a document, without touching the database.
+ * Rules run in order; later rules can override earlier ones for
+ * correspondent/type, but tags are always additive. A rule only changes the
+ * correspondent or type if it has one configured — a rule that just adds tags
+ * leaves both as they are.
+ */
+export function resolveRuleActions(document: RuleTarget, rules: RuleInput[]) {
+  const appliedNames: string[] = [];
+  let correspondentId = document.correspondentId;
+  let documentTypeId = document.documentTypeId;
+  const tagIds = new Set<string>();
+
+  for (const rule of rules) {
+    const fieldValue =
+      rule.matchField === "content" ? (document.content ?? "") : document.title;
+    if (!fieldValue || !matchesCondition(fieldValue, rule.matchOperator, rule.matchValue)) {
+      continue;
+    }
+
+    appliedNames.push(rule.name);
+
+    if (rule.setCorrespondentId) correspondentId = rule.setCorrespondentId;
+    if (rule.setDocumentTypeId) documentTypeId = rule.setDocumentTypeId;
+
+    if (Array.isArray(rule.addTagIds)) {
+      for (const id of rule.addTagIds) {
+        if (typeof id === "string" && id) tagIds.add(id);
+      }
+    }
+  }
+
+  return { appliedNames, correspondentId, documentTypeId, tagIds: [...tagIds] };
+}
+
+/**
+ * A tag was deleted (targetId null) or merged into another tag. Rules store
+ * tag IDs in a JSON column without a foreign key, so they are updated here.
+ */
+export async function replaceTagInRules(
+  sourceId: string,
+  targetId: string | null
+): Promise<void> {
+  const rules = await prisma.matchingRule.findMany({
+    select: { id: true, addTagIds: true },
+  });
+
+  for (const rule of rules) {
+    const ids = Array.isArray(rule.addTagIds) ? (rule.addTagIds as unknown[]) : [];
+    if (!ids.includes(sourceId)) continue;
+
+    const next = new Set<string>();
+    for (const id of ids) {
+      if (typeof id !== "string") continue;
+      if (id === sourceId) {
+        if (targetId) next.add(targetId);
+      } else {
+        next.add(id);
+      }
+    }
+
+    await prisma.matchingRule.update({
+      where: { id: rule.id },
+      data: { addTagIds: [...next] },
+    });
+  }
+}
+
 /**
  * Apply all active matching rules to a document.
- * Rules run in order; later rules can override earlier ones for
- * correspondent/type, but tags are always additive.
  */
 export async function applyMatchingRules(
   documentId: string
@@ -92,38 +175,27 @@ export async function applyMatchingRules(
   });
   if (rules.length === 0) return { applied: 0, ruleNames: [] };
 
-  const appliedNames: string[] = [];
-  let correspondentId = document.correspondentId;
-  let documentTypeId = document.documentTypeId;
-  const tagsToAdd: string[] = [];
-
-  for (const rule of rules) {
-    const fieldValue =
-      rule.matchField === "content" ? (document.content ?? "") : document.title;
-    if (!fieldValue || !matchesCondition(fieldValue, rule.matchOperator, rule.matchValue)) {
-      continue;
-    }
-
-    appliedNames.push(rule.name);
-
-    // Rules always override AI classification for correspondent/type
-    if (rule.setCorrespondentId !== undefined) correspondentId = rule.setCorrespondentId;
-    if (rule.setDocumentTypeId !== undefined) documentTypeId = rule.setDocumentTypeId;
-
-    const addIds = rule.addTagIds as string[];
-    tagsToAdd.push(...addIds);
-  }
+  const { appliedNames, correspondentId, documentTypeId, tagIds } = resolveRuleActions(
+    document,
+    rules
+  );
 
   if (appliedNames.length === 0) return { applied: 0, ruleNames: [] };
 
-  const uniqueTags = [...new Set(tagsToAdd)];
+  // Connecting a tag that no longer exists would fail the whole update and
+  // silently drop every other rule action for this document.
+  const existingTags =
+    tagIds.length > 0
+      ? await prisma.tag.findMany({ where: { id: { in: tagIds } }, select: { id: true } })
+      : [];
+
   await prisma.document.update({
     where: { id: documentId },
     data: {
       correspondentId,
       documentTypeId,
-      ...(uniqueTags.length > 0 && {
-        tags: { connect: uniqueTags.map((id) => ({ id })) },
+      ...(existingTags.length > 0 && {
+        tags: { connect: existingTags.map(({ id }) => ({ id })) },
       }),
     },
   });
@@ -156,7 +228,7 @@ export async function testRuleCondition(
   matchValue: string
 ): Promise<{ count: number; samples: Array<{ id: string; title: string }> }> {
   const docs = await prisma.document.findMany({
-    where: { aiProcessed: true },
+    where: { aiProcessed: true, deletedAt: null },
     select: { id: true, title: true, content: true },
   });
 

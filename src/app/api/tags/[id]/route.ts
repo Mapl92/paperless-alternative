@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { replaceTagInRules } from "@/lib/ai/apply-rules";
 
 export async function PATCH(
   request: NextRequest,
@@ -55,6 +56,7 @@ export async function DELETE(
 
   try {
     await prisma.tag.delete({ where: { id } });
+    await replaceTagInRules(id, null);
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     if (

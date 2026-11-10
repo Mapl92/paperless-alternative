@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { pool } from "@/lib/db/prisma";
-import { deleteFile } from "@/lib/files/storage";
+import { permanentlyDeleteDocuments } from "@/lib/documents/delete-document";
 import { logAuditEvent } from "@/lib/audit";
 
 const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -8,7 +7,7 @@ const RETENTION_DAYS = 30;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 /** Hard-delete documents whose deletedAt is older than 30 days */
-async function cleanupTrash() {
+export async function cleanupTrash() {
   try {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -27,35 +26,15 @@ async function cleanupTrash() {
 
     console.log(`[trash-cleanup] Found ${expired.length} document(s) past ${RETENTION_DAYS}-day retention`);
 
+    let deleted = 0;
+
     for (const doc of expired) {
       try {
-        // 1. Delete embedding from pgvector
-        await pool.query(
-          `UPDATE "Document"
-           SET "embedding" = NULL, "embeddingModel" = NULL
-           WHERE "id" = $1`,
-          [doc.id]
-        );
-
-        // 2. Delete associated files from disk
-        if (doc.originalFile) {
-          await deleteFile(doc.originalFile).catch((e) =>
-            console.warn(`[trash-cleanup] Failed to delete original ${doc.originalFile}:`, e)
-          );
-        }
-        if (doc.archiveFile) {
-          await deleteFile(doc.archiveFile).catch((e) =>
-            console.warn(`[trash-cleanup] Failed to delete archive ${doc.archiveFile}:`, e)
-          );
-        }
-        if (doc.thumbnailFile) {
-          await deleteFile(doc.thumbnailFile).catch((e) =>
-            console.warn(`[trash-cleanup] Failed to delete thumbnail ${doc.thumbnailFile}:`, e)
-          );
-        }
-
-        // 3. Hard-delete the document (cascades to notes, todos, relations, etc.)
-        await prisma.document.delete({ where: { id: doc.id } });
+        // Hard-delete the record (cascades to notes, todos, relations, and drops the
+        // embedding with the row), then remove the files — but only those no other
+        // document still points to. Identical uploads share one original file.
+        await permanentlyDeleteDocuments([doc]);
+        deleted++;
 
         logAuditEvent({
           entityType: "document",
@@ -70,7 +49,7 @@ async function cleanupTrash() {
       }
     }
 
-    console.log(`[trash-cleanup] Permanently deleted ${expired.length} document(s)`);
+    console.log(`[trash-cleanup] Permanently deleted ${deleted} of ${expired.length} document(s)`);
   } catch (err) {
     console.error("[trash-cleanup] Error:", err);
   }

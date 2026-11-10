@@ -49,6 +49,11 @@ export async function POST(
         where: { documentTypeId: sourceId },
         data: { documentTypeId: targetId },
       }),
+      // Rules follow the documents; otherwise the foreign key would blank them
+      prisma.matchingRule.updateMany({
+        where: { setDocumentTypeId: sourceId },
+        data: { setDocumentTypeId: targetId },
+      }),
       // Delete source type
       prisma.documentType.delete({ where: { id: sourceId } }),
     ]);

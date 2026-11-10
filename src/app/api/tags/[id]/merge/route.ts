@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { replaceTagInRules } from "@/lib/ai/apply-rules";
 
 export async function POST(
   request: NextRequest,
@@ -68,6 +69,9 @@ export async function POST(
       // Delete source tag (removes m2m entries automatically)
       prisma.tag.delete({ where: { id: sourceId } }),
     ]);
+
+    // Rules that added the source tag now add the target tag
+    await replaceTagInRules(sourceId, targetId);
 
     return NextResponse.json({ success: true, merged: source.documents.length });
   } catch (error) {
